@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: learn-language-with-song-api-azhang4216
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci
+    startCommand: npm run db:migrate && npm run start:api
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: 24.11.1
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: learn-language-with-song-db
+          property: connectionString
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: FRONTEND_ORIGINS
+        value: https://azhang4216.github.io
+      - key: SESSION_DAYS
+        value: 30
+
+databases:
+  - name: learn-language-with-song-db
+    plan: basic-256mb
+    region: oregon
+    postgresMajorVersion: "18"
+    databaseName: verse
+    user: verse
+    ipAllowList: []
