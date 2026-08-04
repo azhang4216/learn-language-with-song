@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import type { AuthUser } from '../types/auth'
 import { BookIcon, CloseIcon, UserIcon } from './Icons'
 
@@ -6,72 +6,40 @@ interface AccountDialogProps {
   user: AuthUser | null
   learningWordCount: number
   learnedSongCount: number
-  onCredential: (credential: string) => Promise<void>
+  onLogin: (username: string, password: string) => Promise<void>
+  onRegister: (username: string, password: string) => Promise<void>
   onSignOut: () => Promise<void>
   onClose: () => void
 }
-
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ?? ''
 
 export function AccountDialog({
   user,
   learningWordCount,
   learnedSongCount,
-  onCredential,
+  onLogin,
+  onRegister,
   onSignOut,
   onClose,
 }: AccountDialogProps) {
-  const buttonRef = useRef<HTMLDivElement>(null)
+  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    if (user || !googleClientId) return
-    let active = true
-    const render = () => {
-      if (!active || !buttonRef.current || !window.google) return
-      buttonRef.current.replaceChildren()
-      window.google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: ({ credential }) => {
-          setBusy(true)
-          setError('')
-          void onCredential(credential)
-            .catch((reason: unknown) => {
-              setError(reason instanceof Error ? reason.message : 'Sign-in failed. Please try again.')
-            })
-            .finally(() => setBusy(false))
-        },
-      })
-      window.google.accounts.id.renderButton(buttonRef.current, {
-        type: 'standard',
-        theme: 'filled_black',
-        size: 'large',
-        shape: 'pill',
-        text: 'continue_with',
-        width: 280,
-      })
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      if (mode === 'login') await onLogin(username, password)
+      else await onRegister(username, password)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Authentication failed. Please try again.')
+    } finally {
+      setBusy(false)
     }
-
-    if (window.google) {
-      render()
-    } else {
-      const existing = document.querySelector<HTMLScriptElement>('script[data-verse-google-signin]')
-      const script = existing ?? document.createElement('script')
-      script.addEventListener('load', render)
-      if (!existing) {
-        script.src = 'https://accounts.google.com/gsi/client'
-        script.async = true
-        script.dataset.verseGoogleSignin = 'true'
-        document.head.append(script)
-      }
-      return () => {
-        active = false
-        script.removeEventListener('load', render)
-      }
-    }
-    return () => { active = false }
-  }, [onCredential, user])
+  }
 
   const handleSignOut = async () => {
     setBusy(true)
@@ -86,6 +54,11 @@ export function AccountDialog({
     }
   }
 
+  const changeMode = (nextMode: 'login' | 'register') => {
+    setMode(nextMode)
+    setError('')
+  }
+
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
       <section
@@ -98,10 +71,10 @@ export function AccountDialog({
         <header className="dialog-header">
           <div>
             <span className="section-eyebrow">Your Verse account</span>
-            <h2 id="account-title">{user ? 'Learning sync' : 'Sign in to keep learning'}</h2>
+            <h2 id="account-title">{user ? 'Learning sync' : mode === 'login' ? 'Sign in to keep learning' : 'Create your account'}</h2>
             <p>{user
               ? 'Your songs, likes, vocabulary, and progress are saved across devices.'
-              : 'Google sign-in saves publishing, likes, vocabulary, and learned songs.'}</p>
+              : 'A username and password save your publishing, likes, vocabulary, and learned songs.'}</p>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close account"><CloseIcon /></button>
         </header>
@@ -109,10 +82,8 @@ export function AccountDialog({
         {user ? (
           <div className="account-content">
             <div className="account-profile">
-              {user.avatarUrl
-                ? <img src={user.avatarUrl} alt="" referrerPolicy="no-referrer" />
-                : <span className="account-avatar-fallback"><UserIcon /></span>}
-              <span><strong>{user.displayName}</strong><small>{user.email}</small></span>
+              <span className="account-avatar-fallback"><UserIcon /></span>
+              <span><strong>{user.displayName}</strong><small>@{user.username}</small></span>
             </div>
             <div className="account-stats">
               <div><BookIcon /><strong>{learningWordCount}</strong><span>learning words</span></div>
@@ -125,13 +96,48 @@ export function AccountDialog({
         ) : (
           <div className="account-content account-signin-content">
             <span className="account-lockup"><UserIcon /></span>
-            <strong>One account, every device</strong>
-            <p>Anyone who signs in can publish a synchronized song immediately.</p>
-            {googleClientId
-              ? <div className={busy ? 'google-button is-busy' : 'google-button'} ref={buttonRef} />
-              : <p className="account-config-warning">Google sign-in needs the VITE_GOOGLE_CLIENT_ID deployment variable.</p>}
-            {error && <p className="account-error" role="alert">{error}</p>}
-            <small>Email and password sign-in is planned for P1.</small>
+            <strong>{mode === 'login' ? 'Welcome back' : 'Start your learning library'}</strong>
+            <p>{mode === 'login'
+              ? 'Sign in with the username and password you created here.'
+              : 'Anyone with an account can publish a synchronized song immediately.'}</p>
+            <form className="account-form" onSubmit={(event) => void submit(event)}>
+              <label>
+                <span>Username</span>
+                <input
+                  autoFocus
+                  autoComplete="username"
+                  minLength={3}
+                  maxLength={24}
+                  pattern="[A-Za-z0-9_]+"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                <span>Password</span>
+                <input
+                  type="password"
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                  minLength={8}
+                  maxLength={128}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+              </label>
+              {error && <p className="account-error" role="alert">{error}</p>}
+              <button className="primary-button account-submit" disabled={busy} type="submit">
+                {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+              </button>
+            </form>
+            <button
+              className="account-mode-button"
+              onClick={() => changeMode(mode === 'login' ? 'register' : 'login')}
+            >
+              {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
+            </button>
+            <small>No email, verification, or password reset in this MVP.</small>
           </div>
         )}
       </section>

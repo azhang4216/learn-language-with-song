@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import express, { type NextFunction, type Request, type Response } from 'express'
-import { exchangeGoogleCredential, optionalAuth, requireAuth } from './auth'
+import { loginWithPassword, optionalAuth, registerWithPassword, requireAuth } from './auth'
 import { config } from './config'
 import { db } from './db'
 import { assertString, HttpError } from './http'
@@ -87,10 +87,14 @@ app.get('/api/health', asyncRoute(async (_request, response) => {
   response.json({ ok: true })
 }))
 
-app.post('/api/auth/google', asyncRoute(async (request, response) => {
-  const credential = assertString(request.body?.credential, 'credential', 10_000)
-  const result = await exchangeGoogleCredential(credential)
+app.post('/api/auth/register', asyncRoute(async (request, response) => {
+  const result = await registerWithPassword(request.body?.username, request.body?.password)
   response.status(201).json(result)
+}))
+
+app.post('/api/auth/login', asyncRoute(async (request, response) => {
+  const result = await loginWithPassword(request.body?.username, request.body?.password)
+  response.json(result)
 }))
 
 app.get('/api/auth/session', requireAuth, (request, response) => {

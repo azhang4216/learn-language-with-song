@@ -17,8 +17,6 @@ services:
         fromDatabase:
           name: learn-language-with-song-db
           property: connectionString
-      - key: GOOGLE_CLIENT_ID
-        sync: false
       - key: FRONTEND_ORIGINS
         value: https://azhang4216.github.io
       - key: SESSION_DAYS

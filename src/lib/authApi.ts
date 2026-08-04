@@ -12,14 +12,24 @@ export const restoreSession = async (): Promise<AuthUser | null> => {
   }
 }
 
-export const signInWithGoogle = async (credential: string): Promise<AuthUser> => {
-  const result = await apiRequest<{ user: AuthUser; sessionToken: string }>('/auth/google', {
+const authenticate = async (
+  path: '/auth/login' | '/auth/register',
+  username: string,
+  password: string,
+): Promise<AuthUser> => {
+  const result = await apiRequest<{ user: AuthUser; sessionToken: string }>(path, {
     method: 'POST',
-    body: JSON.stringify({ credential }),
+    body: JSON.stringify({ username, password }),
   })
   setSessionToken(result.sessionToken)
   return result.user
 }
+
+export const login = (username: string, password: string): Promise<AuthUser> =>
+  authenticate('/auth/login', username, password)
+
+export const register = (username: string, password: string): Promise<AuthUser> =>
+  authenticate('/auth/register', username, password)
 
 export const signOut = async (): Promise<void> => {
   try {

@@ -1602,7 +1602,6 @@ input[type="range"]::-moz-range-thumb {
   gap: 13px;
 }
 
-.account-profile img,
 .account-avatar-fallback {
   display: grid;
   width: 48px;
@@ -1697,16 +1696,6 @@ input[type="range"]::-moz-range-thumb {
   background: var(--surface-raised);
 }
 
-.google-button {
-  min-height: 44px;
-}
-
-.google-button.is-busy {
-  pointer-events: none;
-  opacity: 0.55;
-}
-
-.account-signin-content .account-config-warning,
 .account-signin-content .account-error {
   margin: 0;
   padding: 10px 12px;
@@ -1714,6 +1703,62 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 8px;
   color: var(--amber);
   background: rgba(228, 190, 112, 0.06);
+}
+
+.account-form {
+  display: flex;
+  width: 100%;
+  max-width: 330px;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.account-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.account-form input {
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  outline: none;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 13px;
+  text-transform: none;
+}
+
+.account-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(215, 243, 106, 0.08);
+}
+
+.account-submit {
+  width: 100%;
+  margin-top: 3px;
+}
+
+.account-submit:disabled,
+.account-signout-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.account-mode-button {
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
 }
 
 .account-signin-content .account-error {

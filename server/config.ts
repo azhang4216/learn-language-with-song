@@ -8,7 +8,6 @@ const required = (name: string): string => {
 
 export const config = {
   get databaseUrl() { return required('DATABASE_URL') },
-  get googleClientId() { return required('GOOGLE_CLIENT_ID') },
   port: Number(process.env.PORT ?? 10000),
   frontendOrigins: (process.env.FRONTEND_ORIGINS ?? 'http://localhost:4173')
     .split(',')

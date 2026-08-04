@@ -1,12 +1,14 @@
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY,
-  google_subject TEXT NOT NULL UNIQUE,
-  email TEXT NOT NULL,
+  username TEXT NOT NULL CONSTRAINT users_username_format_check
+    CHECK (username ~ '^[a-z0-9_]{3,24}$'),
+  password_hash TEXT NOT NULL,
   display_name TEXT NOT NULL,
-  avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_unique_idx ON users(lower(username));
 
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,

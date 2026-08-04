@@ -9,7 +9,7 @@ import { SongLibrary } from './components/SongLibrary'
 import { VocabularyPanel } from './components/VocabularyPanel'
 import { YouTubePlayerDock } from './components/YouTubePlayerDock'
 import { lanPianSong } from './data/lanPianSong'
-import { restoreSession, signInWithGoogle, signOut } from './lib/authApi'
+import { login, register, restoreSession, signOut } from './lib/authApi'
 import { listCatalogSongs, setCatalogLike } from './lib/catalogApi'
 import { localeName } from './lib/format'
 import { getLearningState, removeVocabulary, saveSongProgress, saveVocabulary } from './lib/learningApi'
@@ -87,8 +87,7 @@ export function App() {
     return () => window.clearTimeout(timeout)
   }, [toast])
 
-  const handleCredential = useCallback(async (credential: string) => {
-    const signedInUser = await signInWithGoogle(credential)
+  const finishAuthentication = useCallback(async (signedInUser: AuthUser) => {
     setUser(signedInUser)
     let accountDataLoaded = true
     try {
@@ -101,6 +100,14 @@ export function App() {
       : 'Signed in. Saved learning data will load when the server reconnects.')
     setAccountOpen(false)
   }, [refreshAccountData])
+
+  const handleLogin = useCallback(async (username: string, password: string) => {
+    await finishAuthentication(await login(username, password))
+  }, [finishAuthentication])
+
+  const handleRegister = useCallback(async (username: string, password: string) => {
+    await finishAuthentication(await register(username, password))
+  }, [finishAuthentication])
 
   const handleSignOut = useCallback(async () => {
     await signOut()
@@ -117,7 +124,7 @@ export function App() {
 
   const openAddSong = () => {
     if (!user) {
-      askToSignIn('Sign in with Google to publish a song.')
+      askToSignIn('Sign in to publish a song.')
       return
     }
     setAddSongOpen(true)
@@ -260,7 +267,7 @@ export function App() {
               <PlusIcon /> <span>Add song</span>
             </button>
             <button className="header-account-button" onClick={() => setAccountOpen(true)}>
-              {user?.avatarUrl ? <img src={user.avatarUrl} alt="" referrerPolicy="no-referrer" /> : <UserIcon />}
+              <UserIcon />
               <span>{user ? user.displayName : 'Sign in'}</span>
             </button>
           </div>
@@ -347,7 +354,8 @@ export function App() {
           user={user}
           learningWordCount={learning.vocabulary.filter((item) => item.status === 'learning').length}
           learnedSongCount={learnedIds.size}
-          onCredential={handleCredential}
+          onLogin={handleLogin}
+          onRegister={handleRegister}
           onSignOut={handleSignOut}
           onClose={() => setAccountOpen(false)}
         />

@@ -4,11 +4,11 @@ Verse is a YouTube-based Mandarin learning player with synchronized lyrics, cohe
 
 ## Product status
 
-P0 is implemented:
+The MVP includes:
 
 - YouTube playback with line-synchronized Chinese, pinyin, and English
 - Playback speed controls supported by the YouTube player
-- Google sign-in with server-side ID-token verification
+- Username/password registration and sign-in
 - Public catalogue and search
 - Immediate publishing for any signed-in user
 - Cross-device “Your songs” and liked songs
@@ -16,10 +16,7 @@ P0 is implemented:
 - Mark songs learned and see them in the learned-song library
 - One-pass space-bar timing and prepared Verse JSON upload
 
-Planned:
-
-- **P1:** email/password sign-up and sign-in, plus flashcard review sessions
-- **P2:** private drafts, admin review, and approval before public publishing
+The MVP intentionally has no email, email verification, password reset, or social sign-in. Private drafts, admin review, and publishing approval are planned for P2.
 
 Only YouTube is used for playback. Verse stores YouTube references and lesson metadata; it does not store commercial audio.
 
@@ -29,35 +26,29 @@ Only YouTube is used for playback. Verse stores YouTube references and lesson me
 GitHub Pages (React/Vite)
        │ HTTPS + bearer session
        ▼
-Render web service (Express API + Google verification)
+Render web service (Express API)
        │ internal DATABASE_URL
        ▼
 Render Postgres (accounts, sessions, songs, likes, words, progress)
 ```
 
-A Cloudflare Worker and D1 are not needed in this architecture. The former Worker/D1 implementation has been replaced by the Render API and Postgres schema so there is one backend and one source of truth.
+A Cloudflare Worker and D1 are not needed. The Render API and Postgres database are the only backend and source of truth.
 
-## First-time production setup
+## Create the Render backend and database
 
-### 1. Create the Google web client
+The repository already contains `render.yaml`, which defines both resources. Use a **Blueprint**, not Render Workflow and not Static Site.
 
-In [Google Cloud Console](https://console.cloud.google.com/), configure the OAuth consent screen and create an **OAuth client ID → Web application**. Add these Authorized JavaScript origins:
-
-```text
-http://localhost:4173
-https://azhang4216.github.io
-```
-
-Use the origin only—do not append the repository path. Copy the client ID ending in `.apps.googleusercontent.com`. This sign-in flow does not require a Google client secret.
-
-### 2. Create the Render API and database
-
-1. In Render, choose **New → Blueprint**.
-2. Connect `azhang4216/learn-language-with-song` and select its `render.yaml`.
-3. Enter the Google web client ID when Render asks for `GOOGLE_CLIENT_ID`.
-4. Review and apply the Blueprint.
-5. Wait for the database migration and `/api/health` health check to pass.
-6. Copy the web-service URL. The configured name should produce `https://learn-language-with-song-api-azhang4216.onrender.com`; use the actual Render URL if it differs.
+1. Return to your Render workspace dashboard. The “Create a new Workflow” screen is the wrong flow.
+2. Open **Blueprints** in the workspace’s left sidebar.
+3. Select **New Blueprint Instance**. In dashboard versions that show it, **+ New → Blueprint** opens the same flow.
+4. Connect GitHub if needed, then select `azhang4216/learn-language-with-song`.
+5. Use:
+   - Blueprint name: `learn-language-with-song`
+   - Branch: `main`
+   - Blueprint path: `render.yaml`
+6. Review the two resources and select **Deploy Blueprint**.
+7. Wait for the database and web service to become available. The web-service health check is `/api/health`.
+8. Copy the web-service URL shown by Render. The configured service name should produce `https://learn-language-with-song-api-azhang4216.onrender.com`; use the actual URL if it differs.
 
 The Blueprint creates:
 
@@ -65,34 +56,35 @@ The Blueprint creates:
 - a persistent `basic-256mb` Render Postgres database;
 - an internal `DATABASE_URL` connection, with public database access disabled;
 - exact CORS access for the GitHub Pages origin;
-- automatic migrations and seed data on startup.
+- automatic migrations and the seed lesson on startup.
 
-The database is intentionally on a paid persistent plan because it will contain user accounts and learning progress. For a short-lived test, change the database plan to `free` before applying the Blueprint, but Render free Postgres databases expire after 30 days.
+The database is deliberately on a paid persistent plan because it stores accounts and learning progress. For a temporary test, change its `plan` in `render.yaml` to `free` before creating the Blueprint. Render free Postgres databases expire after 30 days.
 
-### 3. Connect GitHub Pages to Render and Google
+## Connect GitHub Pages to Render
 
-In the GitHub repository, open **Settings → Secrets and variables → Actions → Variables** and add:
+The repository’s GitHub Actions variable already points to the expected Render URL. If Render assigns a different URL:
 
-| Variable | Value |
-| --- | --- |
-| `VITE_CATALOG_API_URL` | The HTTPS Render web-service URL |
-| `VITE_GOOGLE_CLIENT_ID` | The same Google web client ID |
+1. Open the GitHub repository.
+2. Go to **Settings → Secrets and variables → Actions → Variables**.
+3. Update `VITE_CATALOG_API_URL` to the actual HTTPS Render web-service URL.
+4. Open **Actions → Test and deploy GitHub Pages → Run workflow**.
 
-Then open **Actions → Test and deploy GitHub Pages → Run workflow**. The workflow tests and builds the app before deploying it. GitHub Pages is configured to use GitHub Actions and publishes at:
+GitHub Pages publishes at:
 
 ```text
 https://azhang4216.github.io/learn-language-with-song/
 ```
 
-### 4. Verify the live path
+## Verify the live application
 
 1. Open the Pages URL and confirm the seeded song loads.
-2. Sign in with Google.
-3. Like the song, save a lyric word, and mark the song learned.
-4. Refresh or use another browser to confirm the state comes back after sign-in.
-5. Add a small test song and confirm it appears immediately in the public catalogue.
+2. Select **Sign in**, then switch to **Create account**.
+3. Create a username of 3–24 letters, numbers, or underscores and a password of at least 8 characters.
+4. Like the song, save a lyric word, and mark the song learned.
+5. Refresh and sign in again to confirm the saved state returns.
+6. Add a small test song and confirm it appears immediately in the public catalogue.
 
-If Google reports an origin error, re-check that the Cloud Console contains `https://azhang4216.github.io` exactly. If the app shows its seeded offline catalogue but account actions fail, verify `VITE_CATALOG_API_URL` and rerun the Pages workflow.
+If the seeded offline catalogue appears but account actions fail, verify the Render service is healthy and `VITE_CATALOG_API_URL` matches its URL.
 
 ## Run locally
 
@@ -112,7 +104,7 @@ In another terminal:
 npm run dev
 ```
 
-Edit `.env` with your real Google client ID. Vite runs at `http://localhost:4173`; the Express API runs at `http://localhost:10000`.
+Vite runs at `http://localhost:4173`; the Express API runs at `http://localhost:10000`.
 
 Quality checks:
 
@@ -122,22 +114,23 @@ npm test
 npm run build
 ```
 
-## Data model and API
+## Authentication and data
 
 Postgres stores:
 
-- `users` and hashed, expiring `sessions`;
+- `users` with normalized usernames and salted `scrypt` password hashes;
+- hashed, expiring `sessions`;
 - public `songs` with their complete lesson JSON;
 - per-user `song_likes`;
 - `user_vocabulary` snapshots for flashcard learning;
 - `user_song_progress` for learning/learned state.
 
-Public API reads remain anonymous. Publishing, likes, vocabulary, and progress require a valid session. Google ID tokens are verified by the backend against `GOOGLE_CLIENT_ID`; the database stores Google’s stable subject identifier and never stores a Google password or access token.
+Public catalogue reads remain anonymous. Publishing, likes, vocabulary, and progress require a valid session. The application never stores plaintext passwords.
 
 Relevant files:
 
 - `server/index.ts` — Render Express API
-- `server/auth.ts` — Google verification and database sessions
+- `server/auth.ts` — password hashing, login, registration, and sessions
 - `server/migrate.ts` — transactional migrations and seed lesson
 - `migrations/0001_catalog.sql` — Postgres schema
 - `render.yaml` — Render Blueprint

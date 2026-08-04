@@ -19,7 +19,7 @@ describe('Verse catalogue learning experience', () => {
       const url = String(input)
       if (url.endsWith('/api/auth/session')) {
         return Promise.resolve(Response.json({
-          user: { id: 'user-1', email: 'learner@example.com', displayName: 'Test Learner' },
+          user: { id: 'user-1', username: 'test_learner', displayName: 'Test Learner' },
         }))
       }
       if (url.endsWith('/api/me/state')) {
@@ -107,6 +107,10 @@ describe('Verse catalogue learning experience', () => {
   it('asks anonymous learners to sign in before publishing', () => {
     render(<App />)
     fireEvent.click(screen.getAllByRole('button', { name: /add song/i })[0]!)
-    expect(screen.getByRole('dialog', { name: 'Sign in to keep learning' })).toBeInTheDocument()
+    const account = screen.getByRole('dialog', { name: 'Sign in to keep learning' })
+    expect(within(account).getByLabelText('Username')).toBeInTheDocument()
+    expect(within(account).getByLabelText('Password')).toBeInTheDocument()
+    fireEvent.click(within(account).getByRole('button', { name: /create an account/i }))
+    expect(screen.getByRole('dialog', { name: 'Create your account' })).toBeInTheDocument()
   })
 })
