@@ -2,9 +2,20 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { lanPianSong } from './data/lanPianSong'
+import type { LearningState } from './types/auth'
 
 vi.mock('./components/YouTubePlayerDock', () => ({
-  YouTubePlayerDock: () => <div aria-label="YouTube song player" />,
+  YouTubePlayerDock: ({
+    collapsed,
+    onToggleCollapsed,
+  }: {
+    collapsed: boolean
+    onToggleCollapsed: () => void
+  }) => (
+    <div aria-label="YouTube song player">
+      <button onClick={onToggleCollapsed} aria-label={collapsed ? 'Expand music player and show video' : 'Collapse music player and hide video'} />
+    </div>
+  ),
 }))
 
 describe('Verse catalogue learning experience', () => {
@@ -13,7 +24,7 @@ describe('Verse catalogue learning experience', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline test')))
   })
 
-  const mockSignedIn = () => {
+  const mockSignedIn = (state: LearningState = { vocabulary: [], songProgress: [] }) => {
     localStorage.setItem('verse.auth.session', 'test-session')
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -23,7 +34,38 @@ describe('Verse catalogue learning experience', () => {
         }))
       }
       if (url.endsWith('/api/me/state')) {
-        return Promise.resolve(Response.json({ vocabulary: [], songProgress: [] }))
+        return Promise.resolve(Response.json(state))
+      }
+      if (url.endsWith('/api/me/vocabulary') && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body)) as { songId: string; cueId: string; tokenId: string }
+        const cue = lanPianSong.cues.find((item) => item.id === body.cueId)!
+        const token = cue.tokens!.find((item) => item.id === body.tokenId)!
+        return Promise.resolve(Response.json({
+          item: {
+            ...body,
+            sourceText: token.text,
+            romanization: token.romanization?.text,
+            gloss: token.glosses?.en,
+            status: 'learning',
+            createdAt: '2026-08-04T00:00:00.000Z',
+            updatedAt: '2026-08-04T00:00:00.000Z',
+          },
+        }))
+      }
+      if (url.includes('/api/me/vocabulary/') && init?.method === 'DELETE') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      if (url.includes('/api/me/songs/') && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body)) as { status: 'learning' | 'learned'; lastPositionMs: number }
+        return Promise.resolve(Response.json({
+          progress: {
+            songId: lanPianSong.id,
+            status: body.status,
+            lastPositionMs: body.lastPositionMs,
+            learnedAt: body.status === 'learned' ? '2026-08-04T00:00:00.000Z' : null,
+            updatedAt: '2026-08-04T00:00:00.000Z',
+          },
+        }))
       }
       if (url.includes('/api/songs/') && init?.method === 'PUT') {
         return Promise.resolve(Response.json({ liked: true, likeCount: 1 }))
@@ -112,5 +154,41 @@ describe('Verse catalogue learning experience', () => {
     expect(within(account).getByLabelText('Password')).toBeInTheDocument()
     fireEvent.click(within(account).getByRole('button', { name: /create an account/i }))
     expect(screen.getByRole('dialog', { name: 'Create your account' })).toBeInTheDocument()
+  })
+
+  it('marks a song as currently learning and highlights it in the sidebar', async () => {
+    mockSignedIn()
+    render(<App />)
+    expect(await screen.findByRole('button', { name: /test learner/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Learn this song' }))
+    expect(await screen.findByRole('button', { name: 'Currently learning' })).toBeInTheDocument()
+    expect(screen.getByText('Learning songs').parentElement).toHaveTextContent('1')
+    expect(document.querySelector('.song-list-item.is-learning-song')).toBeInTheDocument()
+  })
+
+  it('marks every repeated occurrence of a learning word and shows one flashcard', async () => {
+    mockSignedIn()
+    render(<App />)
+    expect(await screen.findByRole('button', { name: /test learner/i })).toBeInTheDocument()
+    const repeated = screen.getAllByRole('button', { name: '其实, qíshí' })
+    expect(repeated.length).toBeGreaterThan(1)
+    fireEvent.click(repeated[0]!)
+    fireEvent.click(screen.getByRole('button', { name: 'Learn this word' }))
+    await waitFor(() => repeated.forEach((button) => expect(button).toHaveClass('is-learning')))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Flashcards' }))
+    expect(screen.getByRole('heading', { name: 'Flashcards' })).toBeInTheDocument()
+    expect(screen.getByText('1 learning word')).toBeInTheDocument()
+    expect(screen.getByText('其实')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /reveal answer/i }))
+    expect(screen.getByText('qíshí')).toBeInTheDocument()
+    expect(screen.getByText('actually')).toBeInTheDocument()
+  })
+
+  it('collapses the player into its compact mode', () => {
+    const { container } = render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse music player and hide video' }))
+    expect(container.querySelector('.app-shell')).toHaveClass('player-collapsed')
+    expect(screen.getByRole('button', { name: 'Expand music player and show video' })).toBeInTheDocument()
   })
 })

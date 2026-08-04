@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { LyricCue, LyricToken, Song } from '../types/song'
+import { tokenVocabularyIdentity } from '../lib/vocabulary'
 import { FollowIcon } from './Icons'
 
 interface LyricsViewProps {
@@ -8,6 +9,7 @@ interface LyricsViewProps {
   activeCueIndex: number
   activeTokenId: string | null
   selectedTokenId: string | null
+  learningWordIdentities: ReadonlySet<string>
   onTokenSelect: (cue: LyricCue, token: LyricToken) => void
 }
 
@@ -17,6 +19,7 @@ export function LyricsView({
   activeCueIndex,
   activeTokenId,
   selectedTokenId,
+  learningWordIdentities,
   onTokenSelect,
 }: LyricsViewProps) {
   const [following, setFollowing] = useState(true)
@@ -121,7 +124,7 @@ export function LyricsView({
                   {showPinyin && (cue.tokens?.some((token) => token.romanization) ? (
                     <div className={`romanization-line ${isActive && !hasTimedTokens ? 'line-active' : ''}`} lang="zh-Latn-pinyin">
                       {cue.tokens.map((token) => (
-                        <span className={`${activeTokenId === token.id ? 'is-active' : ''} ${selectedTokenId === token.id ? 'is-selected' : ''}`} key={token.id}>
+                        <span className={`${activeTokenId === token.id ? 'is-active' : ''} ${selectedTokenId === token.id ? 'is-selected' : ''} ${learningWordIdentities.has(tokenVocabularyIdentity(token)) ? 'is-learning' : ''}`} key={token.id}>
                           {token.romanization?.text ?? token.text}
                         </span>
                       ))}
@@ -135,7 +138,7 @@ export function LyricsView({
                   <div className="source-line" lang={song.sourceLocale}>
                     {cue.tokens?.length ? cue.tokens.map((token) => (
                       <button
-                        className={`lyric-token ${activeTokenId === token.id ? 'is-active' : ''} ${selectedTokenId === token.id ? 'is-selected' : ''}`}
+                        className={`lyric-token ${activeTokenId === token.id ? 'is-active' : ''} ${selectedTokenId === token.id ? 'is-selected' : ''} ${learningWordIdentities.has(tokenVocabularyIdentity(token)) ? 'is-learning' : ''}`}
                         key={token.id}
                         onClick={() => onTokenSelect(cue, token)}
                         aria-label={`${token.text}${token.romanization?.text ? `, ${token.romanization.text}` : ''}`}

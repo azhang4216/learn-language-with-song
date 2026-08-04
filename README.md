@@ -12,8 +12,10 @@ The MVP includes:
 - Public catalogue and search
 - Immediate publishing for any signed-in user
 - Cross-device “Your songs” and liked songs
-- Save individual lyric words as learning vocabulary for future flashcards
-- Mark songs learned and see them in the learned-song library
+- Save repeated lyric vocabulary as one highlighted learning word across the song
+- Review saved words in a deduplicated flashcard tab
+- Mark songs as currently learning or learned and see both library sections
+- Collapse the bottom player into audio controls without showing the video
 - One-pass space-bar timing and prepared Verse JSON upload
 
 The MVP intentionally has no email, email verification, password reset, or social sign-in. Private drafts, admin review, and publishing approval are planned for P2.

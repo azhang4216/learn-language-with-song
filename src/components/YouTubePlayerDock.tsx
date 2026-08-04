@@ -3,7 +3,7 @@ import { connectYouTubeTrack } from '../lib/youtube'
 import { formatTime } from '../lib/format'
 import type { TimingPlaybackController } from '../types/playback'
 import type { CatalogSong } from '../types/catalog'
-import { PauseIcon, PlayIcon, RewindIcon, YouTubeIcon } from './Icons'
+import { ChevronDownIcon, PauseIcon, PlayIcon, RewindIcon, YouTubeIcon } from './Icons'
 
 interface YouTubePlayerDockProps {
   song: CatalogSong
@@ -11,6 +11,8 @@ interface YouTubePlayerDockProps {
   onTimeUpdate: (seconds: number) => void
   onPlayingChange: (playing: boolean) => void
   onControllerChange: (controller: TimingPlaybackController | null) => void
+  collapsed: boolean
+  onToggleCollapsed: () => void
 }
 
 export function YouTubePlayerDock({
@@ -19,6 +21,8 @@ export function YouTubePlayerDock({
   onTimeUpdate,
   onPlayingChange,
   onControllerChange,
+  collapsed,
+  onToggleCollapsed,
 }: YouTubePlayerDockProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const controllerRef = useRef<TimingPlaybackController | null>(null)
@@ -109,8 +113,16 @@ export function YouTubePlayerDock({
   const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0
 
   return (
-    <footer className="youtube-dock" aria-label="YouTube song player">
-      <div className="youtube-dock-video" ref={hostRef} />
+    <footer className={`youtube-dock ${collapsed ? 'is-collapsed' : ''}`} aria-label="YouTube song player">
+      <button
+        className="youtube-dock-collapse"
+        onClick={onToggleCollapsed}
+        aria-label={collapsed ? 'Expand music player and show video' : 'Collapse music player and hide video'}
+        aria-expanded={!collapsed}
+      >
+        <ChevronDownIcon />
+      </button>
+      <div className="youtube-dock-video" ref={hostRef} aria-hidden={collapsed} inert={collapsed} />
       <div className="youtube-dock-song">
         <YouTubeIcon />
         <div>
