@@ -1,63 +1,35 @@
 import { useState, type FormEvent } from 'react'
-import { publishCatalogSong } from '../lib/catalogApi'
+import {
+  enrichChineseLyrics,
+  getYouTubeSongMetadata,
+  publishCatalogSong,
+} from '../lib/catalogApi'
 import { SongValidationError } from '../lib/songValidation'
 import { parseYouTubeVideoId, youtubeThumbnailUrl, youtubeWatchUrl } from '../lib/youtubeUrl'
-import type { CatalogSong, CatalogSongDraft } from '../types/catalog'
+import type {
+  CatalogSong,
+  CatalogSongDraft,
+  EnrichedLyricLine,
+  LyricsEnrichment,
+} from '../types/catalog'
 import type { TimingProject } from '../types/timing'
-import { AlertIcon, CloseIcon, TimerIcon, UploadIcon, YouTubeIcon } from './Icons'
+import {
+  AlertIcon,
+  ArrowLeftIcon,
+  CheckIcon,
+  CloseIcon,
+  TimerIcon,
+  UploadIcon,
+  YouTubeIcon,
+} from './Icons'
 import { TimingStudio } from './TimingStudio'
 
 const MAX_UPLOAD_BYTES = 256 * 1024
-
-interface PreparedLines {
-  chineseWords: string[][]
-  pinyinWords: string[][]
-  glossWords: string[][]
-  translations: string[]
-}
+type ComposerStep = 'youtube' | 'details' | 'lyrics' | 'loading' | 'review'
 
 interface AddSongDialogProps {
   onClose: () => void
   onPublished: (song: CatalogSong) => void
-}
-
-const rows = (value: string): string[] => value
-  .split(/\r?\n/)
-  .map((row) => row.trim())
-  .filter(Boolean)
-
-const groupedRows = (value: string, separator: RegExp): string[][] =>
-  rows(value).map((row) => row.split(separator).map((group) => group.trim()).filter(Boolean))
-
-const prepareLines = (
-  chinese: string,
-  pinyin: string,
-  glosses: string,
-  english: string,
-): PreparedLines => {
-  const chineseWords = groupedRows(chinese, /\s+/)
-  const pinyinWords = groupedRows(pinyin, /\s*\|\s*/)
-  const glossWords = groupedRows(glosses, /\s*\|\s*/)
-  const translations = rows(english)
-  const issues: string[] = []
-
-  if (chineseWords.length === 0) issues.push('Add at least one Chinese lyric line.')
-  if (chineseWords.length > 500) issues.push('A lesson can contain at most 500 lyric lines.')
-  if (pinyinWords.length !== chineseWords.length) issues.push('Pinyin must have one row for every Chinese row.')
-  if (glossWords.length !== chineseWords.length) issues.push('Word meanings must have one row for every Chinese row.')
-  if (translations.length !== chineseWords.length) issues.push('English must have one row for every Chinese row.')
-
-  chineseWords.forEach((words, index) => {
-    if (pinyinWords[index]?.length !== words.length) {
-      issues.push(`Line ${index + 1}: the number of pinyin groups must match the ${words.length} Chinese word groups.`)
-    }
-    if (glossWords[index]?.length !== words.length) {
-      issues.push(`Line ${index + 1}: the number of meaning groups must match the ${words.length} Chinese word groups.`)
-    }
-  })
-
-  if (issues.length) throw new SongValidationError(issues)
-  return { chineseWords, pinyinWords, glossWords, translations }
 }
 
 const errorMessages = (error: unknown): string[] => {
@@ -65,62 +37,150 @@ const errorMessages = (error: unknown): string[] => {
   return [error instanceof Error ? error.message : 'The song could not be prepared.']
 }
 
+const stepNumber = (step: ComposerStep): number => {
+  if (step === 'youtube') return 1
+  if (step === 'details') return 2
+  if (step === 'lyrics' || step === 'loading') return 3
+  return 4
+}
+
 export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
+  const [step, setStep] = useState<ComposerStep>('youtube')
+  const [projectId] = useState(() => `community-${crypto.randomUUID()}`)
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
   const [youtubeUrl, setYoutubeUrl] = useState('')
-  const [chinese, setChinese] = useState('')
-  const [pinyin, setPinyin] = useState('')
-  const [glosses, setGlosses] = useState('')
-  const [english, setEnglish] = useState('')
+  const [videoId, setVideoId] = useState('')
+  const [script, setScript] = useState<'simplified' | 'traditional'>('simplified')
+  const [lyrics, setLyrics] = useState('')
+  const [enrichment, setEnrichment] = useState<LyricsEnrichment | null>(null)
   const [issues, setIssues] = useState<string[]>([])
+  const [notice, setNotice] = useState('')
+  const [working, setWorking] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [timingProject, setTimingProject] = useState<TimingProject | null>(null)
-  const [preparedLines, setPreparedLines] = useState<PreparedLines | null>(null)
 
-  const beginTiming = (event: FormEvent) => {
+  const continueFromYouTube = async (event: FormEvent) => {
     event.preventDefault()
+    const parsedVideoId = parseYouTubeVideoId(youtubeUrl)
+    if (!parsedVideoId) {
+      setIssues(['Enter a valid youtube.com or youtu.be link.'])
+      return
+    }
+    setWorking(true)
+    setIssues([])
+    setNotice('')
+    setVideoId(parsedVideoId)
     try {
-      const videoId = parseYouTubeVideoId(youtubeUrl)
-      if (!title.trim()) throw new SongValidationError(['Song title is required.'])
-      if (!artist.trim()) throw new SongValidationError(['Artist is required.'])
-      if (!videoId) throw new SongValidationError(['Enter a valid youtube.com or youtu.be link.'])
-      const prepared = prepareLines(chinese, pinyin, glosses, english)
-      const project: TimingProject = {
-        schemaVersion: 1,
-        id: `community-${crypto.randomUUID()}`,
-        sourceLocale: 'zh-Hans',
-        script: 'simplified',
-        track: {
-          title: title.trim(),
-          artist: artist.trim(),
-          durationMs: 0,
-          youtubeVideoId: videoId,
-          youtubeUrl: youtubeWatchUrl(videoId),
-        },
-        lines: prepared.chineseWords.map((words) => words.join('')),
-        romanizations: prepared.pinyinWords.map((words) => words.join(' ')),
-      }
-      setIssues([])
-      setPreparedLines(prepared)
-      setTimingProject(project)
-    } catch (error) {
-      setIssues(errorMessages(error))
+      const metadata = await getYouTubeSongMetadata(youtubeUrl)
+      setTitle((current) => current || metadata.title)
+      setArtist((current) => current || metadata.artist)
+    } catch {
+      setNotice('We could not extract the video details automatically. Add the title and artist below.')
+    } finally {
+      setWorking(false)
+      setStep('details')
     }
   }
 
+  const continueFromDetails = (event: FormEvent) => {
+    event.preventDefault()
+    const nextIssues: string[] = []
+    if (!title.trim()) nextIssues.push('Song title is required.')
+    if (!artist.trim()) nextIssues.push('Artist is required.')
+    if (nextIssues.length) {
+      setIssues(nextIssues)
+      return
+    }
+    setIssues([])
+    setStep('lyrics')
+  }
+
+  const generateLearningDraft = async (event: FormEvent) => {
+    event.preventDefault()
+    const rows = lyrics.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    if (!rows.length) {
+      setIssues(['Paste at least one Chinese lyric line.'])
+      return
+    }
+    if (rows.length > 500) {
+      setIssues(['A lesson can contain at most 500 lyric lines.'])
+      return
+    }
+    setIssues([])
+    setStep('loading')
+    try {
+      setEnrichment(await enrichChineseLyrics(lyrics, script))
+      setStep('review')
+    } catch (error) {
+      setIssues(errorMessages(error))
+      setStep('lyrics')
+    }
+  }
+
+  const updateLine = (lineIndex: number, update: (line: EnrichedLyricLine) => EnrichedLyricLine) => {
+    setEnrichment((current) => current ? {
+      ...current,
+      lines: current.lines.map((line, index) => index === lineIndex ? update(line) : line),
+    } : current)
+  }
+
+  const updateGroupedWords = (lineIndex: number, value: string) => {
+    const words = value.split(/\s+/).map((word) => word.trim()).filter(Boolean)
+    updateLine(lineIndex, (line) => ({
+      ...line,
+      sourceText: words.join(''),
+      tokens: words.map((word, tokenIndex) => ({
+        text: word,
+        romanization: line.tokens[tokenIndex]?.romanization ?? '',
+        gloss: line.tokens[tokenIndex]?.gloss ?? '',
+      })),
+    }))
+  }
+
+  const beginTiming = () => {
+    if (!enrichment) return
+    const nextIssues: string[] = []
+    enrichment.lines.forEach((line, lineIndex) => {
+      if (!line.tokens.length) nextIssues.push(`Line ${lineIndex + 1} needs at least one Chinese word group.`)
+      if (line.tokens.some((token) => !token.text.trim())) nextIssues.push(`Line ${lineIndex + 1} has an empty Chinese word group.`)
+      if (line.tokens.some((token) => !token.romanization.trim())) nextIssues.push(`Line ${lineIndex + 1} needs pinyin for every word.`)
+      if (line.tokens.some((token) => !token.gloss.trim())) nextIssues.push(`Line ${lineIndex + 1} needs a meaning for every word.`)
+      if (!line.translation.trim()) nextIssues.push(`Line ${lineIndex + 1} needs a natural English translation.`)
+    })
+    if (nextIssues.length) {
+      setIssues(nextIssues.slice(0, 8))
+      return
+    }
+    setIssues([])
+    setTimingProject({
+      schemaVersion: 1,
+      id: projectId,
+      sourceLocale: enrichment.sourceLocale,
+      script,
+      track: {
+        title: title.trim(),
+        artist: artist.trim(),
+        durationMs: 0,
+        youtubeVideoId: videoId,
+        youtubeUrl: youtubeWatchUrl(videoId),
+      },
+      lines: enrichment.lines.map((line) => line.tokens.map((token) => token.text).join('')),
+      romanizations: enrichment.lines.map((line) => line.tokens.map((token) => token.romanization).join(' ')),
+    })
+  }
+
   const publishTimedSong = async (boundariesMs: number[]) => {
-    if (!timingProject || !preparedLines) return
+    if (!timingProject || !enrichment) return
     setPublishing(true)
     setIssues([])
-    const videoId = timingProject.track.youtubeVideoId
     const draft: CatalogSongDraft = {
       schemaVersion: 1,
       id: timingProject.id,
       title: timingProject.track.title,
       artist: timingProject.track.artist,
       artworkUrl: youtubeThumbnailUrl(videoId),
-      sourceLocale: 'zh-Hans',
+      sourceLocale: enrichment.sourceLocale,
       translationLocale: 'en',
       audio: { durationMs: boundariesMs.at(-1) },
       youtube: {
@@ -128,34 +188,31 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
         url: youtubeWatchUrl(videoId),
         thumbnailUrl: youtubeThumbnailUrl(videoId),
       },
-      cues: preparedLines.chineseWords.map((words, cueIndex) => ({
+      cues: enrichment.lines.map((line, cueIndex) => ({
         id: `line-${String(cueIndex + 1).padStart(2, '0')}`,
         startMs: boundariesMs[cueIndex]!,
         endMs: boundariesMs[cueIndex + 1]!,
-        sourceText: words.join(''),
+        sourceText: line.tokens.map((token) => token.text).join(''),
         romanization: {
           system: 'pinyin',
-          text: preparedLines.pinyinWords[cueIndex]!.join(' '),
+          text: line.tokens.map((token) => token.romanization).join(' '),
         },
-        translations: { natural: preparedLines.translations[cueIndex]! },
-        tokens: words.map((word, tokenIndex) => ({
+        translations: { natural: line.translation.trim() },
+        tokens: line.tokens.map((token, tokenIndex) => ({
           id: `line-${String(cueIndex + 1).padStart(2, '0')}-token-${tokenIndex + 1}`,
-          text: word,
-          romanization: {
-            system: 'pinyin',
-            text: preparedLines.pinyinWords[cueIndex]![tokenIndex]!,
-          },
-          glosses: { en: preparedLines.glossWords[cueIndex]![tokenIndex]! },
+          text: token.text.trim(),
+          romanization: { system: 'pinyin', text: token.romanization.trim() },
+          glosses: { en: token.gloss.trim() },
         })),
       })),
     }
 
     try {
-      const song = await publishCatalogSong(draft)
-      onPublished(song)
+      onPublished(await publishCatalogSong(draft))
     } catch (error) {
       setIssues(errorMessages(error))
       setTimingProject(null)
+      setStep('review')
     } finally {
       setPublishing(false)
     }
@@ -170,8 +227,7 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
     setPublishing(true)
     setIssues([])
     try {
-      const song = await publishCatalogSong(JSON.parse(await file.text()) as unknown)
-      onPublished(song)
+      onPublished(await publishCatalogSong(JSON.parse(await file.text()) as unknown))
     } catch (error) {
       setIssues(errorMessages(error))
     } finally {
@@ -183,11 +239,17 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
     return (
       <TimingStudio
         project={timingProject}
-        onClose={() => setTimingProject(null)}
+        backLabel="Back to lyric review"
+        onClose={() => {
+          setTimingProject(null)
+          setStep('review')
+        }}
         onComplete={(boundaries) => { void publishTimedSong(boundaries) }}
       />
     )
   }
+
+  const currentStep = stepNumber(step)
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
@@ -202,62 +264,182 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
           <div>
             <span className="section-eyebrow">Community contribution</span>
             <h2 id="add-song-title">Add a YouTube song</h2>
-            <p>Prepare word-level learning data, then sync each lyric entrance while listening.</p>
+            <p>We will prepare the language data for review before you synchronize it to the recording.</p>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close add song"><CloseIcon /></button>
         </header>
 
-        <form className="song-composer" onSubmit={beginTiming}>
-          <div className="composer-grid">
-            <label><span>Song title</span><input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
-            <label><span>Artist</span><input value={artist} onChange={(event) => setArtist(event.target.value)} required /></label>
+        <ol className="composer-stepper" aria-label="Song contribution progress">
+          {['YouTube', 'Details', 'Lyrics', 'Review', 'Sync'].map((label, index) => (
+            <li className={index + 1 === currentStep ? 'active' : index + 1 < currentStep ? 'complete' : ''} key={label}>
+              <span>{index + 1 < currentStep ? <CheckIcon /> : index + 1}</span>{label}
+            </li>
+          ))}
+        </ol>
+
+        {step === 'youtube' && (
+          <form className="song-composer composer-single-step" onSubmit={(event) => void continueFromYouTube(event)}>
+            <div className="composer-step-heading">
+              <span>Step 1</span>
+              <h3>Start with the YouTube link</h3>
+              <p>We’ll use the video to suggest the song title and artist on the next page.</p>
+            </div>
+            <label>
+              <span>YouTube link</span>
+              <span className="input-with-icon"><YouTubeIcon /><input type="url" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=…" required /></span>
+            </label>
+            {issues.length > 0 && <ComposerErrors issues={issues} />}
+            <div className="composer-actions"><span /><button className="start-timing-button" type="submit" disabled={working}>{working ? 'Reading video…' : 'Next: song details'}</button></div>
+          </form>
+        )}
+
+        {step === 'details' && (
+          <form className="song-composer composer-single-step" onSubmit={continueFromDetails}>
+            <div className="composer-step-heading">
+              <span>Step 2</span>
+              <h3>Check the song details</h3>
+              <p>These were suggested from YouTube. Edit either field before continuing.</p>
+            </div>
+            {notice && <div className="composer-notice">{notice}</div>}
+            <div className="composer-grid">
+              <label><span>Song title</span><input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
+              <label><span>Artist</span><input value={artist} onChange={(event) => setArtist(event.target.value)} required /></label>
+            </div>
+            {issues.length > 0 && <ComposerErrors issues={issues} />}
+            <div className="composer-actions">
+              <button className="composer-back" type="button" onClick={() => setStep('youtube')}><ArrowLeftIcon /> Back</button>
+              <button className="start-timing-button" type="submit">Next: paste lyrics</button>
+            </div>
+          </form>
+        )}
+
+        {step === 'lyrics' && (
+          <form className="song-composer composer-single-step" onSubmit={(event) => void generateLearningDraft(event)}>
+            <div className="composer-step-heading">
+              <span>Step 3</span>
+              <h3>Paste the Chinese lyrics</h3>
+              <p>Keep one sung line per row. You do not need to add spaces or group the words—we’ll do that next.</p>
+            </div>
+            <fieldset className="script-choice">
+              <legend>Chinese script</legend>
+              <label className={script === 'simplified' ? 'selected' : ''}><input type="radio" name="script" value="simplified" checked={script === 'simplified'} onChange={() => setScript('simplified')} /> Simplified Chinese</label>
+              <label className={script === 'traditional' ? 'selected' : ''}><input type="radio" name="script" value="traditional" checked={script === 'traditional'} onChange={() => setScript('traditional')} /> Traditional Chinese</label>
+            </fieldset>
+            <label>
+              <span>Chinese lyrics · one line per row</span>
+              <textarea className="raw-lyrics-input" value={lyrics} onChange={(event) => setLyrics(event.target.value)} placeholder={'打開電視卻找不到遙控\n找到遙控翻到外賣變冷'} required />
+            </label>
+            {issues.length > 0 && <ComposerErrors issues={issues} />}
+            <div className="composer-actions">
+              <button className="composer-back" type="button" onClick={() => setStep('details')}><ArrowLeftIcon /> Back</button>
+              <button className="start-timing-button" type="submit">Generate learning draft</button>
+            </div>
+          </form>
+        )}
+
+        {step === 'loading' && (
+          <div className="enrichment-loading" role="status" aria-live="polite">
+            <span className="loading-orbit"><i /><i /><i /></span>
+            <h3>Preparing the learning view</h3>
+            <p>Grouping Chinese words and drafting pinyin, word meanings, and line translations…</p>
           </div>
-          <label>
-            <span>YouTube link</span>
-            <span className="input-with-icon"><YouTubeIcon /><input type="url" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=…" required /></span>
-          </label>
+        )}
 
-          <div className="composer-instructions">
-            <strong>One matching row in every box</strong>
-            <span>Separate cohesive Chinese words with spaces. Separate the matching pinyin and word meanings with <code>|</code>.</span>
+        {step === 'review' && enrichment && (
+          <div className="enrichment-review">
+            <div className="composer-step-heading">
+              <span>Step 4</span>
+              <h3>Review the generated language data</h3>
+              <p>Everything below is editable. Check the word grouping, pinyin, meanings, and natural translation before synchronizing.</p>
+            </div>
+            <div className="enrichment-review-note"><CheckIcon /> Dictionary-generated first draft · changes are saved while this window is open</div>
+            <div className="enrichment-lines">
+              {enrichment.lines.map((line, lineIndex) => (
+                <article className="enrichment-line" key={`line-${lineIndex}`}>
+                  <div className="enrichment-line-heading"><span>{String(lineIndex + 1).padStart(2, '0')}</span><strong>Lyric line</strong></div>
+                  <label className="grouped-words-field">
+                    <span>Chinese word groups · separate groups with spaces</span>
+                    <input
+                      value={line.tokens.map((token) => token.text).join(' ')}
+                      onChange={(event) => updateGroupedWords(lineIndex, event.target.value)}
+                      aria-label={`Line ${lineIndex + 1} grouped Chinese words`}
+                    />
+                  </label>
+                  <div className="enrichment-token-list">
+                    {line.tokens.map((token, tokenIndex) => (
+                      <div className="enrichment-token" key={`${lineIndex}-${tokenIndex}`}>
+                        <input
+                          className="token-pinyin"
+                          value={token.romanization}
+                          onChange={(event) => updateLine(lineIndex, (currentLine) => ({
+                            ...currentLine,
+                            tokens: currentLine.tokens.map((currentToken, index) => index === tokenIndex
+                              ? { ...currentToken, romanization: event.target.value }
+                              : currentToken),
+                          }))}
+                          aria-label={`Line ${lineIndex + 1} word ${tokenIndex + 1} pinyin`}
+                        />
+                        <input
+                          className="token-chinese"
+                          value={token.text}
+                          onChange={(event) => updateLine(lineIndex, (currentLine) => ({
+                            ...currentLine,
+                            sourceText: currentLine.tokens.map((currentToken, index) => index === tokenIndex ? event.target.value : currentToken.text).join(''),
+                            tokens: currentLine.tokens.map((currentToken, index) => index === tokenIndex
+                              ? { ...currentToken, text: event.target.value }
+                              : currentToken),
+                          }))}
+                          aria-label={`Line ${lineIndex + 1} word ${tokenIndex + 1} Chinese`}
+                        />
+                        <input
+                          className="token-gloss"
+                          value={token.gloss}
+                          onChange={(event) => updateLine(lineIndex, (currentLine) => ({
+                            ...currentLine,
+                            tokens: currentLine.tokens.map((currentToken, index) => index === tokenIndex
+                              ? { ...currentToken, gloss: event.target.value }
+                              : currentToken),
+                          }))}
+                          aria-label={`Line ${lineIndex + 1} word ${tokenIndex + 1} meaning`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <label className="natural-translation-field">
+                    <span>Natural English translation</span>
+                    <input
+                      value={line.translation}
+                      onChange={(event) => updateLine(lineIndex, (currentLine) => ({ ...currentLine, translation: event.target.value }))}
+                      aria-label={`Line ${lineIndex + 1} natural English translation`}
+                    />
+                  </label>
+                </article>
+              ))}
+            </div>
+            {issues.length > 0 && <ComposerErrors issues={issues} />}
+            <div className="composer-actions review-actions">
+              <button className="composer-back" type="button" onClick={() => setStep('lyrics')}><ArrowLeftIcon /> Back to lyrics</button>
+              <button className="start-timing-button" type="button" onClick={beginTiming}><TimerIcon /> Save & start listening sync</button>
+            </div>
           </div>
+        )}
 
-          <div className="composer-textareas">
-            <label>
-              <span>Chinese · grouped words</span>
-              <textarea value={chinese} onChange={(event) => setChinese(event.target.value)} placeholder={'打开 电视 却 找不到 遥控\n找到 遥控 翻到 外卖 变冷'} required />
-            </label>
-            <label>
-              <span>Pinyin · matching groups</span>
-              <textarea value={pinyin} onChange={(event) => setPinyin(event.target.value)} placeholder={'dǎkāi | diànshì | què | zhǎo bu dào | yáokòng\nzhǎodào | yáokòng | fān dào | wàimài | biàn lěng'} required />
-            </label>
-            <label>
-              <span>Word meanings · matching groups</span>
-              <textarea value={glosses} onChange={(event) => setGlosses(event.target.value)} placeholder={'turn on | television | yet | cannot find | remote control\nfind | remote control | turn to | takeout | go cold'} required />
-            </label>
-            <label>
-              <span>Natural English translation</span>
-              <textarea value={english} onChange={(event) => setEnglish(event.target.value)} placeholder={"I turn on the TV but can't find the remote.\nI find the remote, then notice the takeout has gone cold."} required />
+        {step === 'youtube' && (
+          <div className="prepared-upload">
+            <div><strong>Already have a complete Verse JSON?</strong><span>It will go through the same validation before publishing.</span></div>
+            <label className="upload-json-button">
+              <UploadIcon /> {publishing ? 'Checking…' : 'Upload JSON'}
+              <input className="visually-hidden" type="file" accept="application/json,.json" disabled={publishing} onChange={(event) => void uploadPreparedSong(event.target.files?.[0])} />
             </label>
           </div>
-
-          {issues.length > 0 && (
-            <div className="composer-errors" role="alert"><AlertIcon /><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>
-          )}
-
-          <button className="start-timing-button" type="submit" disabled={publishing}>
-            <TimerIcon /> Start listening sync
-          </button>
-        </form>
-
-        <div className="prepared-upload">
-          <div><strong>Already have a complete Verse JSON?</strong><span>It will go through the same validation before publishing.</span></div>
-          <label className="upload-json-button">
-            <UploadIcon /> {publishing ? 'Checking…' : 'Upload JSON'}
-            <input className="visually-hidden" type="file" accept="application/json,.json" disabled={publishing} onChange={(event) => void uploadPreparedSong(event.target.files?.[0])} />
-          </label>
-        </div>
+        )}
       </section>
     </div>
+  )
+}
+
+function ComposerErrors({ issues }: { issues: string[] }) {
+  return (
+    <div className="composer-errors" role="alert"><AlertIcon /><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>
   )
 }

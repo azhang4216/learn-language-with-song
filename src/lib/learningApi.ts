@@ -31,6 +31,17 @@ export const removeVocabulary = async (
   )
 }
 
+export const reviewVocabulary = async (
+  item: Pick<VocabularyLearningItem, 'songId' | 'cueId' | 'tokenId'>,
+  familiar: boolean,
+): Promise<VocabularyLearningItem> => {
+  const result = await apiRequest<{ item: VocabularyLearningItem }>('/me/vocabulary/review', {
+    method: 'PUT',
+    body: JSON.stringify({ ...item, familiar }),
+  })
+  return result.item
+}
+
 export const saveSongProgress = async (
   songId: string,
   status: 'learning' | 'learned',

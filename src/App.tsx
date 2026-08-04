@@ -13,7 +13,13 @@ import { lanPianSong } from './data/lanPianSong'
 import { login, register, restoreSession, signOut } from './lib/authApi'
 import { listCatalogSongs, setCatalogLike } from './lib/catalogApi'
 import { localeName } from './lib/format'
-import { getLearningState, removeVocabulary, saveSongProgress, saveVocabulary } from './lib/learningApi'
+import {
+  getLearningState,
+  removeVocabulary,
+  reviewVocabulary,
+  saveSongProgress,
+  saveVocabulary,
+} from './lib/learningApi'
 import { findActiveCueIndex, findActiveTokenId, getTokenSeekTime } from './lib/timing'
 import {
   dedupeVocabulary,
@@ -21,12 +27,11 @@ import {
   savedVocabularyIdentity,
   tokenVocabularyIdentity,
 } from './lib/vocabulary'
-import type { AuthUser, LearningState } from './types/auth'
+import type { AuthUser, LearningState, VocabularyLearningItem } from './types/auth'
 import type { CatalogSong } from './types/catalog'
 import type { TimingPlaybackController } from './types/playback'
 import type { LyricCue, LyricToken, TokenSelection } from './types/song'
 
-const ignorePlayingChange = () => undefined
 const emptyLearningState: LearningState = { vocabulary: [], songProgress: [] }
 type AppView = 'lesson' | 'flashcards'
 
@@ -35,6 +40,7 @@ export function App() {
   const [activeSongId, setActiveSongId] = useState(lanPianSong.id)
   const [selection, setSelection] = useState<TokenSelection | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(false)
   const [user, setUser] = useState<AuthUser | null>(null)
   const [learning, setLearning] = useState<LearningState>(emptyLearningState)
   const [view, setView] = useState<AppView>('lesson')
@@ -153,6 +159,7 @@ export function App() {
     setActiveSongId(songId)
     setSelection(null)
     setCurrentTime(0)
+    setIsPlaying(false)
     setView('lesson')
     setCatalogOpen(false)
     setLibraryOpen(false)
@@ -165,6 +172,7 @@ export function App() {
 
   const selectToken = (cue: LyricCue, token: LyricToken) => {
     setSelection({ cue, token })
+    if (isPlaying && activeCue?.id === cue.id) return
     const seconds = getTokenSeekTime(cue, token) / 1000
     setCurrentTime(seconds)
     const playback = playbackRef.current
@@ -172,6 +180,34 @@ export function App() {
     void playback.seekToTime(seconds)
       .then(() => playback.play())
       .catch(() => setToast('Press play once, then word replay will work.'))
+  }
+
+  const rateVocabularyCard = async (card: VocabularyLearningItem, familiar: boolean) => {
+    const identity = savedVocabularyIdentity(card)
+    const matchingItems = learning.vocabulary.filter((item) =>
+      item.songId === card.songId && savedVocabularyIdentity(item) === identity)
+    try {
+      const reviewed = await Promise.all(matchingItems.map((item) => reviewVocabulary(item, familiar)))
+      const reviewedByOccurrence = new Map(reviewed.map((item) => [
+        `${item.songId}:${item.cueId}:${item.tokenId}`,
+        item,
+      ]))
+      setLearning((current) => ({
+        ...current,
+        vocabulary: current.vocabulary.map((item) => reviewedByOccurrence.get(
+          `${item.songId}:${item.cueId}:${item.tokenId}`,
+        ) ?? item),
+      }))
+      const result = reviewed[0]
+      setToast(result?.status === 'learned'
+        ? `“${card.sourceText}” is now learned`
+        : familiar
+          ? 'One more familiar answer in a row to learn this word'
+          : `“${card.sourceText}” was added to Review more`)
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'This flashcard result could not be saved.')
+      throw error
+    }
   }
 
   const toggleLike = async () => {
@@ -344,11 +380,15 @@ export function App() {
                     onClick={() => void setSongStatus('learning')}
                     aria-pressed={songProgressStatus === 'learning'}
                   ><MusicIcon /> {songProgressStatus === 'learning' ? 'Currently learning' : 'Learn this song'}</button>
-                  <button
-                    className={songProgressStatus === 'learned' ? 'learned-button is-learned' : 'learned-button'}
-                    onClick={() => void setSongStatus('learned')}
-                    aria-pressed={songProgressStatus === 'learned'}
-                  ><CheckIcon /> {songProgressStatus === 'learned' ? 'Learned' : 'Mark as learned'}</button>
+                  {songProgressStatus === 'learning' && (
+                    <button
+                      className="learned-button"
+                      onClick={() => void setSongStatus('learned')}
+                    ><CheckIcon /> Mark as learned</button>
+                  )}
+                  {songProgressStatus === 'learned' && (
+                    <span className="learned-status"><CheckIcon /> Learned</span>
+                  )}
                 </div>
                 <div className="learning-hint"><InfoIcon /> Select a grouped word to replay it and highlight its pinyin and meaning.</div>
               </div>
@@ -380,6 +420,7 @@ export function App() {
               songs={songs}
               signedIn={Boolean(user)}
               onSignIn={() => setAccountOpen(true)}
+              onRate={(card, familiar) => rateVocabularyCard(card, familiar)}
             />
           </div>
         )}
@@ -390,7 +431,7 @@ export function App() {
         song={song}
         currentTime={currentTime}
         onTimeUpdate={setCurrentTime}
-        onPlayingChange={ignorePlayingChange}
+        onPlayingChange={setIsPlaying}
         onControllerChange={handleControllerChange}
         collapsed={playerCollapsed}
         onToggleCollapsed={() => setPlayerCollapsed((current) => !current)}

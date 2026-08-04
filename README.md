@@ -13,10 +13,11 @@ The MVP includes:
 - Immediate publishing for any signed-in user
 - Cross-device “Your songs” and liked songs
 - Save repeated lyric vocabulary as one highlighted learning word across the song
-- Review saved words in a deduplicated flashcard tab
-- Mark songs as currently learning or learned and see both library sections
+- Review saved words in a deduplicated flashcard tab with familiar/review-more grading, persisted two-answer mastery, and a three-color progress summary
+- Mark songs as currently learning before marking them learned, and see both library sections
 - Collapse the bottom player into audio controls without showing the video
-- One-pass space-bar timing and prepared Verse JSON upload
+- A guided YouTube contribution flow that extracts editable video details, accepts ungrouped simplified or traditional lyrics, generates dictionary-backed word groups/pinyin/meanings, and provides a full review editor before timing
+- One-pass space-bar timing, return-to-edit support, and prepared Verse JSON upload
 
 The MVP intentionally has no email, email verification, password reset, or social sign-in. Private drafts, admin review, and publishing approval are planned for P2.
 
@@ -82,7 +83,7 @@ https://azhang4216.github.io/learn-language-with-song/
 1. Open the Pages URL and confirm the seeded song loads.
 2. Select **Sign in**, then switch to **Create account**.
 3. Create a username of 3–24 letters, numbers, or underscores and a password of at least 8 characters.
-4. Like the song, save a lyric word, and mark the song learned.
+4. Like the song, save a lyric word, mark the song currently learning, then mark it learned.
 5. Refresh and sign in again to confirm the saved state returns.
 6. Add a small test song and confirm it appears immediately in the public catalogue.
 
@@ -124,7 +125,7 @@ Postgres stores:
 - hashed, expiring `sessions`;
 - public `songs` with their complete lesson JSON;
 - per-user `song_likes`;
-- `user_vocabulary` snapshots for flashcard learning;
+- `user_vocabulary` snapshots, familiarity streaks, and review state for flashcard learning;
 - `user_song_progress` for learning/learned state.
 
 Public catalogue reads remain anonymous. Publishing, likes, vocabulary, and progress require a valid session. The application never stores plaintext passwords.

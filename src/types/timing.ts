@@ -10,7 +10,7 @@ export interface TimingProject {
   schemaVersion: 1
   id: string
   sourceLocale: string
-  script: 'simplified'
+  script: 'simplified' | 'traditional'
   track: TimingTrack
   lines: string[]
   romanizations: string[]
@@ -28,7 +28,7 @@ export interface SavedTimingDraft {
 export interface ExportedTimingProject extends SavedTimingDraft {
   track: TimingTrack
   sourceLocale: string
-  script: 'simplified'
+  script: 'simplified' | 'traditional'
   cues: Array<{
     id: string
     sourceText: string

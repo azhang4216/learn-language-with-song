@@ -29,3 +29,27 @@ export interface LikeResult {
   liked: boolean
   likeCount: number
 }
+
+export interface YouTubeSongMetadata {
+  videoId: string
+  title: string
+  artist: string
+  thumbnailUrl: string
+}
+
+export interface EnrichedLyricToken {
+  text: string
+  romanization: string
+  gloss: string
+}
+
+export interface EnrichedLyricLine {
+  sourceText: string
+  tokens: EnrichedLyricToken[]
+  translation: string
+}
+
+export interface LyricsEnrichment {
+  sourceLocale: 'zh-Hans' | 'zh-Hant'
+  lines: EnrichedLyricLine[]
+}

@@ -4,7 +4,9 @@ import { loginWithPassword, optionalAuth, registerWithPassword, requireAuth } fr
 import { config } from './config'
 import { db } from './db'
 import { assertString, HttpError } from './http'
+import { enrichChineseLyrics } from './chineseEnrichment'
 import { parseCatalogSongDraft, SongValidationError } from '../src/lib/songValidation'
+import { parseYouTubeVideoId, youtubeThumbnailUrl, youtubeWatchUrl } from '../src/lib/youtubeUrl'
 import type { CatalogSong, CatalogSongDraft } from '../src/types/catalog'
 
 const app = express()
@@ -57,6 +59,23 @@ const rowToSong = (row: SongRow): CatalogSong => {
   }
 }
 
+const cleanVideoTitle = (value: string): string => value
+  .replace(/\s*(?:\((?:official|lyrics?|audio|music video|visuali[sz]er).*?\)|\[(?:official|lyrics?|audio|music video|visuali[sz]er).*?])\s*/gi, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+const inferYouTubeMetadata = (titleValue: string, authorValue: string) => {
+  const title = cleanVideoTitle(titleValue)
+  const split = title.split(/\s+(?:-|–|—|｜|\|)\s+/, 2)
+  if (split.length === 2 && split[0] && split[1]) {
+    return { artist: split[0].trim(), title: split[1].trim() }
+  }
+  return {
+    title,
+    artist: authorValue.replace(/\s+-\s+Topic$/i, '').trim(),
+  }
+}
+
 const asyncRoute = (
   handler: (request: Request, response: Response) => Promise<unknown>,
 ) => (request: Request, response: Response, next: NextFunction): void => {
@@ -104,6 +123,52 @@ app.get('/api/auth/session', requireAuth, (request, response) => {
 app.delete('/api/auth/session', requireAuth, asyncRoute(async (request, response) => {
   await db.query('DELETE FROM sessions WHERE token_hash = $1', [request.sessionHash])
   response.sendStatus(204)
+}))
+
+app.post('/api/song-tools/youtube-metadata', requireAuth, asyncRoute(async (request, response) => {
+  const youtubeUrl = assertString(request.body?.youtubeUrl, 'youtubeUrl', 500)
+  const videoId = parseYouTubeVideoId(youtubeUrl)
+  if (!videoId) throw new HttpError(400, 'Enter a valid youtube.com or youtu.be link.')
+
+  let title = ''
+  let artist = ''
+  try {
+    const metadataResponse = await fetch(
+      `https://www.youtube.com/oembed?url=${encodeURIComponent(youtubeWatchUrl(videoId))}&format=json`,
+      { signal: AbortSignal.timeout(8_000) },
+    )
+    if (metadataResponse.ok) {
+      const metadata = await metadataResponse.json() as { title?: unknown; author_name?: unknown }
+      const inferred = inferYouTubeMetadata(
+        typeof metadata.title === 'string' ? metadata.title : '',
+        typeof metadata.author_name === 'string' ? metadata.author_name : '',
+      )
+      title = inferred.title
+      artist = inferred.artist
+    }
+  } catch {
+    // Metadata is a convenience. The contributor can still enter both fields manually.
+  }
+
+  response.json({
+    videoId,
+    title,
+    artist,
+    thumbnailUrl: youtubeThumbnailUrl(videoId),
+  })
+}))
+
+app.post('/api/song-tools/enrich-lyrics', requireAuth, asyncRoute(async (request, response) => {
+  const lyrics = assertString(request.body?.lyrics, 'lyrics', 100_000)
+  const script = request.body?.script
+  if (script !== 'simplified' && script !== 'traditional') {
+    throw new HttpError(400, 'script must be “simplified” or “traditional”.')
+  }
+  const lineCount = lyrics.split(/\r?\n/).filter((line) => line.trim()).length
+  if (!lineCount) throw new HttpError(400, 'Add at least one Chinese lyric line.')
+  if (lineCount > 500) throw new HttpError(400, 'A lesson can contain at most 500 lyric lines.')
+
+  response.json(enrichChineseLyrics(lyrics, script))
 }))
 
 app.get('/api/songs', optionalAuth, asyncRoute(async (request, response) => {
@@ -205,6 +270,7 @@ app.get('/api/me/state', requireAuth, asyncRoute(async (request, response) => {
     db.query(`
       SELECT song_id AS "songId", cue_id AS "cueId", token_id AS "tokenId",
         source_text AS "sourceText", romanization, gloss, status,
+        familiarity_streak AS "familiarityStreak", review_state AS "reviewState",
         created_at AS "createdAt", updated_at AS "updatedAt"
       FROM user_vocabulary WHERE user_id = $1
       ORDER BY updated_at DESC
@@ -241,9 +307,12 @@ app.put('/api/me/vocabulary', requireAuth, asyncRoute(async (request, response) 
       romanization = EXCLUDED.romanization,
       gloss = EXCLUDED.gloss,
       status = 'learning',
+      familiarity_streak = 0,
+      review_state = 'learning',
       updated_at = NOW()
     RETURNING song_id AS "songId", cue_id AS "cueId", token_id AS "tokenId",
       source_text AS "sourceText", romanization, gloss, status,
+      familiarity_streak AS "familiarityStreak", review_state AS "reviewState",
       created_at AS "createdAt", updated_at AS "updatedAt"
   `, [
     request.authUser!.id,
@@ -255,6 +324,36 @@ app.put('/api/me/vocabulary', requireAuth, asyncRoute(async (request, response) 
     token.glosses?.[draft.translationLocale] ?? token.glosses?.en ?? null,
   ])
   response.json({ item: saved.rows[0] })
+}))
+
+app.put('/api/me/vocabulary/review', requireAuth, asyncRoute(async (request, response) => {
+  const songId = assertString(request.body?.songId, 'songId', 160)
+  const cueId = assertString(request.body?.cueId, 'cueId', 160)
+  const tokenId = assertString(request.body?.tokenId, 'tokenId', 160)
+  if (typeof request.body?.familiar !== 'boolean') {
+    throw new HttpError(400, 'familiar must be true or false.')
+  }
+  const familiar = request.body.familiar as boolean
+  const result = await db.query(`
+    UPDATE user_vocabulary SET
+      familiarity_streak = CASE
+        WHEN $5 THEN LEAST(2, familiarity_streak + 1)
+        ELSE 0
+      END,
+      status = CASE
+        WHEN $5 AND familiarity_streak >= 1 THEN 'learned'
+        ELSE 'learning'
+      END,
+      review_state = CASE WHEN $5 THEN 'learning' ELSE 'review' END,
+      updated_at = NOW()
+    WHERE user_id = $1 AND song_id = $2 AND cue_id = $3 AND token_id = $4
+    RETURNING song_id AS "songId", cue_id AS "cueId", token_id AS "tokenId",
+      source_text AS "sourceText", romanization, gloss, status,
+      familiarity_streak AS "familiarityStreak", review_state AS "reviewState",
+      created_at AS "createdAt", updated_at AS "updatedAt"
+  `, [request.authUser!.id, songId, cueId, tokenId, familiar])
+  if (!result.rows[0]) throw new HttpError(404, 'Learning word not found.')
+  response.json({ item: result.rows[0] })
 }))
 
 app.delete('/api/me/vocabulary/:songId/:cueId/:tokenId', requireAuth, asyncRoute(async (request, response) => {

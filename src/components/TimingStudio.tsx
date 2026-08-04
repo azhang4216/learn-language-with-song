@@ -43,12 +43,14 @@ interface TimingStudioProps {
   onClose: () => void
   project?: TimingProject
   onComplete?: (boundariesMs: number[]) => void
+  backLabel?: string
 }
 
 export function TimingStudio({
   onClose,
   project = lanPianTimingProject,
   onComplete,
+  backLabel = 'Back to Verse',
 }: TimingStudioProps) {
   const [boundariesMs, setBoundariesMs] = useState<number[]>(() => readTimingDraft(project))
   const [connection, setConnection] = useState<ConnectionState>('idle')
@@ -300,7 +302,7 @@ export function TimingStudio({
       aria-labelledby="timing-project-title"
     >
       <header className="timing-header">
-        <button className="timing-back" onClick={onClose}><ArrowLeftIcon /> Back to Verse</button>
+        <button className="timing-back" onClick={onClose}><ArrowLeftIcon /> {backLabel}</button>
         <div className="timing-brand"><TimerIcon /><span>{isComplete ? 'Synchronized lesson' : 'Timing studio'}</span></div>
         <div className="timing-save-state"><span className="privacy-dot" /> {isComplete ? `${project.lines.length} lines synced` : 'Saved locally'}</div>
       </header>
@@ -443,7 +445,7 @@ export function TimingStudio({
                   <span className="timing-line-number">{String(index + 1).padStart(2, '0')}</span>
                   <span className="timing-line-copy">
                     <span className="timing-line-pinyin" lang="zh-Latn-pinyin">{project.romanizations[index]}</span>
-                    <span className="timing-line-chinese" lang="zh-Hans">{line}</span>
+                    <span className="timing-line-chinese" lang={project.sourceLocale}>{line}</span>
                   </span>
                   <span className="timing-line-time">
                     {isTimed ? `${formatTime(start / 1000)} – ${formatTime(end / 1000)}` : start !== undefined ? `${formatTime(start / 1000)} →` : isNext ? 'Next' : '—'}

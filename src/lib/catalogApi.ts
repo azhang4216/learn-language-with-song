@@ -1,5 +1,12 @@
 import { lanPianSong } from '../data/lanPianSong'
-import type { CatalogFilters, CatalogSong, CatalogSongDraft, LikeResult } from '../types/catalog'
+import type {
+  CatalogFilters,
+  CatalogSong,
+  CatalogSongDraft,
+  LikeResult,
+  LyricsEnrichment,
+  YouTubeSongMetadata,
+} from '../types/catalog'
 import { apiRequest } from './apiClient'
 import { parseCatalogSongDraft } from './songValidation'
 
@@ -38,4 +45,19 @@ export const publishCatalogSong = async (draftValue: unknown): Promise<CatalogSo
 export const setCatalogLike = async (songId: string, liked: boolean): Promise<LikeResult> =>
   apiRequest<LikeResult>(`/songs/${encodeURIComponent(songId)}/like`, {
     method: liked ? 'PUT' : 'DELETE',
+  })
+
+export const getYouTubeSongMetadata = (youtubeUrl: string): Promise<YouTubeSongMetadata> =>
+  apiRequest<YouTubeSongMetadata>('/song-tools/youtube-metadata', {
+    method: 'POST',
+    body: JSON.stringify({ youtubeUrl }),
+  })
+
+export const enrichChineseLyrics = (
+  lyrics: string,
+  script: 'simplified' | 'traditional',
+): Promise<LyricsEnrichment> =>
+  apiRequest<LyricsEnrichment>('/song-tools/enrich-lyrics', {
+    method: 'POST',
+    body: JSON.stringify({ lyrics, script }),
   })

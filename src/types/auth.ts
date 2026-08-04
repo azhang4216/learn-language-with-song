@@ -12,6 +12,8 @@ export interface VocabularyLearningItem {
   romanization?: string | null
   gloss?: string | null
   status: 'learning' | 'learned'
+  familiarityStreak: number
+  reviewState: 'learning' | 'review'
   createdAt: string
   updatedAt: string
 }
