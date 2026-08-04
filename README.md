@@ -53,12 +53,12 @@ The repository already contains `render.yaml`, which defines both resources. Use
 The Blueprint creates:
 
 - a free Render web service;
-- a persistent `basic-256mb` Render Postgres database;
+- a free Render Postgres database for the initial MVP;
 - an internal `DATABASE_URL` connection, with public database access disabled;
 - exact CORS access for the GitHub Pages origin;
 - automatic migrations and the seed lesson on startup.
 
-The database is deliberately on a paid persistent plan because it stores accounts and learning progress. For a temporary test, change its `plan` in `render.yaml` to `free` before creating the Blueprint. Render free Postgres databases expire after 30 days.
+Render free Postgres databases expire after 30 days, so this MVP database must be upgraded or replaced before that deadline to preserve accounts and learning progress.
 
 ## Connect GitHub Pages to Render
 
