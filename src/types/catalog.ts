@@ -34,6 +34,7 @@ export interface YouTubeSongMetadata {
   videoId: string
   title: string
   artist: string
+  metadataSource: 'llm' | 'heuristic'
   thumbnailUrl: string
 }
 

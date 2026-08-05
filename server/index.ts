@@ -5,6 +5,7 @@ import { config } from './config'
 import { db } from './db'
 import { assertString, HttpError } from './http'
 import { enrichChineseLyrics } from './chineseEnrichment'
+import { inferYouTubeMetadata } from './songMetadata'
 import { parseCatalogSongDraft, SongValidationError } from '../src/lib/songValidation'
 import { parseYouTubeVideoId, youtubeThumbnailUrl, youtubeWatchUrl } from '../src/lib/youtubeUrl'
 import type { CatalogSong, CatalogSongDraft } from '../src/types/catalog'
@@ -56,23 +57,6 @@ const rowToSong = (row: SongRow): CatalogSong => {
     isLiked: Boolean(row.is_liked),
     createdAt: asIso(row.created_at),
     updatedAt: asIso(row.updated_at),
-  }
-}
-
-const cleanVideoTitle = (value: string): string => value
-  .replace(/\s*(?:\((?:official|lyrics?|audio|music video|visuali[sz]er).*?\)|\[(?:official|lyrics?|audio|music video|visuali[sz]er).*?])\s*/gi, ' ')
-  .replace(/\s+/g, ' ')
-  .trim()
-
-const inferYouTubeMetadata = (titleValue: string, authorValue: string) => {
-  const title = cleanVideoTitle(titleValue)
-  const split = title.split(/\s+(?:-|–|—|｜|\|)\s+/, 2)
-  if (split.length === 2 && split[0] && split[1]) {
-    return { artist: split[0].trim(), title: split[1].trim() }
-  }
-  return {
-    title,
-    artist: authorValue.replace(/\s+-\s+Topic$/i, '').trim(),
   }
 }
 
@@ -132,6 +116,7 @@ app.post('/api/song-tools/youtube-metadata', requireAuth, asyncRoute(async (requ
 
   let title = ''
   let artist = ''
+  let metadataSource: 'llm' | 'heuristic' = 'heuristic'
   try {
     const metadataResponse = await fetch(
       `https://www.youtube.com/oembed?url=${encodeURIComponent(youtubeWatchUrl(videoId))}&format=json`,
@@ -139,12 +124,17 @@ app.post('/api/song-tools/youtube-metadata', requireAuth, asyncRoute(async (requ
     )
     if (metadataResponse.ok) {
       const metadata = await metadataResponse.json() as { title?: unknown; author_name?: unknown }
-      const inferred = inferYouTubeMetadata(
+      const inferred = await inferYouTubeMetadata(
         typeof metadata.title === 'string' ? metadata.title : '',
         typeof metadata.author_name === 'string' ? metadata.author_name : '',
+        {
+          apiKey: config.openAiApiKey,
+          model: config.openAiMetadataModel,
+        },
       )
       title = inferred.title
       artist = inferred.artist
+      metadataSource = inferred.source
     }
   } catch {
     // Metadata is a convenience. The contributor can still enter both fields manually.
@@ -154,6 +144,7 @@ app.post('/api/song-tools/youtube-metadata', requireAuth, asyncRoute(async (requ
     videoId,
     title,
     artist,
+    metadataSource,
     thumbnailUrl: youtubeThumbnailUrl(videoId),
   })
 }))

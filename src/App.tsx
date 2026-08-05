@@ -23,6 +23,7 @@ import {
 import { findActiveCueIndex, findActiveTokenId, getTokenSeekTime } from './lib/timing'
 import {
   dedupeVocabulary,
+  firstVocabularyOccurrence,
   matchingVocabularyOccurrences,
   savedVocabularyIdentity,
   tokenVocabularyIdentity,
@@ -51,6 +52,7 @@ export function App() {
   const [accountOpen, setAccountOpen] = useState(false)
   const [toast, setToast] = useState('')
   const playbackRef = useRef<TimingPlaybackController | null>(null)
+  const pendingWordPlaybackRef = useRef<{ seconds: number } | null>(null)
 
   const song = useMemo(
     () => songs.find((item) => item.id === activeSongId) ?? songs[0] ?? lanPianSong,
@@ -152,10 +154,17 @@ export function App() {
 
   const handleControllerChange = useCallback((controller: TimingPlaybackController | null) => {
     playbackRef.current = controller
+    const pending = pendingWordPlaybackRef.current
+    if (!controller || !pending) return
+    pendingWordPlaybackRef.current = null
+    void controller.seekToTime(pending.seconds)
+      .then(() => controller.play())
+      .catch(() => setToast('Press play once to hear this word in the song.'))
   }, [])
 
   const changeSong = useCallback((songId: string) => {
     playbackRef.current?.pause().catch(() => undefined)
+    pendingWordPlaybackRef.current = null
     setActiveSongId(songId)
     setSelection(null)
     setCurrentTime(0)
@@ -180,6 +189,31 @@ export function App() {
     void playback.seekToTime(seconds)
       .then(() => playback.play())
       .catch(() => setToast('Press play once, then word replay will work.'))
+  }
+
+  const openFlashcardInSong = (card: VocabularyLearningItem) => {
+    const targetSong = songs.find((item) => item.id === card.songId)
+    const occurrence = targetSong ? firstVocabularyOccurrence(targetSong, card.sourceText) : undefined
+    if (!targetSong || !occurrence) {
+      setToast('This word could not be found in its song.')
+      return
+    }
+
+    setView('lesson')
+    setLibraryOpen(false)
+    setCatalogOpen(false)
+    if (targetSong.id === song.id && playbackRef.current) {
+      selectToken(occurrence.cue, occurrence.token)
+      return
+    }
+
+    playbackRef.current?.pause().catch(() => undefined)
+    const seconds = getTokenSeekTime(occurrence.cue, occurrence.token) / 1000
+    pendingWordPlaybackRef.current = { seconds }
+    setActiveSongId(targetSong.id)
+    setSelection(occurrence)
+    setCurrentTime(seconds)
+    setIsPlaying(false)
   }
 
   const rateVocabularyCard = async (card: VocabularyLearningItem, familiar: boolean) => {
@@ -421,6 +455,7 @@ export function App() {
               signedIn={Boolean(user)}
               onSignIn={() => setAccountOpen(true)}
               onRate={(card, familiar) => rateVocabularyCard(card, familiar)}
+              onOpenInSong={openFlashcardInSong}
             />
           </div>
         )}

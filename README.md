@@ -13,10 +13,10 @@ The MVP includes:
 - Immediate publishing for any signed-in user
 - Cross-device “Your songs” and liked songs
 - Save repeated lyric vocabulary as one highlighted learning word across the song
-- Review saved words in a deduplicated flashcard tab with familiar/review-more grading, persisted two-answer mastery, and a three-color progress summary
+- Review saved words in a deduplicated flashcard tab with familiar/review-more grading, persisted two-answer mastery, first-occurrence song context, configurable ordering/filtering, and a three-color progress summary
 - Mark songs as currently learning before marking them learned, and see both library sections
 - Collapse the bottom player into audio controls without showing the video
-- A guided YouTube contribution flow that extracts editable video details, accepts ungrouped simplified or traditional lyrics, generates dictionary-backed word groups/pinyin/meanings, and provides a full review editor before timing
+- A guided YouTube contribution flow that intelligently extracts editable song details, accepts ungrouped simplified or traditional lyrics, generates dictionary-backed word groups/pinyin/meanings, and provides a full review editor before timing
 - One-pass space-bar timing, return-to-edit support, and prepared Verse JSON upload
 
 The MVP intentionally has no email, email verification, password reset, or social sign-in. Private drafts, admin review, and publishing approval are planned for P2.
@@ -30,6 +30,7 @@ GitHub Pages (React/Vite)
        │ HTTPS + bearer session
        ▼
 Render web service (Express API)
+       ├── OpenAI Responses API (optional metadata interpretation)
        │ internal DATABASE_URL
        ▼
 Render Postgres (accounts, sessions, songs, likes, words, progress)
@@ -55,13 +56,25 @@ The repository already contains `render.yaml`, which defines both resources. Use
 
 The Blueprint creates:
 
-- a free Render web service;
+- a Starter Render web service, the lowest always-on instance type;
 - a free Render Postgres database for the initial MVP;
 - an internal `DATABASE_URL` connection, with public database access disabled;
 - exact CORS access for the GitHub Pages origin;
 - automatic migrations and the seed lesson on startup.
 
 Render free Postgres databases expire after 30 days, so this MVP database must be upgraded or replaced before that deadline to preserve accounts and learning progress.
+
+## Activate intelligent YouTube metadata
+
+The backend always has a local metadata parser and recognizes original-language patterns such as `利比《跳楼机》`. For more ambiguous video titles, it can use the OpenAI Responses API to return a strict song-title/artist result. The contributor still reviews and can edit both fields.
+
+To activate the model on Render:
+
+1. Open the `learn-language-with-song-api-azhang4216` web service.
+2. Open **Environment** and add a secret named `OPENAI_API_KEY`.
+3. Save the change and let Render redeploy the service.
+
+The Blueprint sets `OPENAI_METADATA_MODEL=gpt-5.6-luna`, which is appropriate for this small structured extraction task. You can override it in Render. Keep `OPENAI_API_KEY` only on the backend—never add it to a `VITE_` variable or GitHub Pages.
 
 ## Connect GitHub Pages to Render
 

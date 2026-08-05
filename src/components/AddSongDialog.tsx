@@ -75,6 +75,9 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
       const metadata = await getYouTubeSongMetadata(youtubeUrl)
       setTitle((current) => current || metadata.title)
       setArtist((current) => current || metadata.artist)
+      setNotice(metadata.metadataSource === 'llm'
+        ? 'AI interpreted the video title and channel. Please confirm both fields before continuing.'
+        : 'We made a best guess from the video title and channel. Please confirm both fields before continuing.')
     } catch {
       setNotice('We could not extract the video details automatically. Add the title and artist below.')
     } finally {
@@ -298,7 +301,7 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
             <div className="composer-step-heading">
               <span>Step 2</span>
               <h3>Check the song details</h3>
-              <p>These were suggested from YouTube. Edit either field before continuing.</p>
+              <p>These were interpreted from the video title and channel. Edit either field before continuing.</p>
             </div>
             {notice && <div className="composer-notice">{notice}</div>}
             <div className="composer-grid">

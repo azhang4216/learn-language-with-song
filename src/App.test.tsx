@@ -127,6 +127,7 @@ describe('Verse catalogue learning experience', () => {
           videoId: 'n49Zi0fIGlA',
           title: '测试歌',
           artist: 'Tester',
+          metadataSource: 'llm',
           thumbnailUrl: 'https://i.ytimg.com/vi/n49Zi0fIGlA/hqdefault.jpg',
         }))
       }
@@ -276,6 +277,9 @@ describe('Verse catalogue learning experience', () => {
     fireEvent.click(screen.getByRole('button', { name: /reveal answer/i }))
     expect(screen.getByText('qíshí')).toBeInTheDocument()
     expect(screen.getByText('actually')).toBeInTheDocument()
+    expect(screen.getByText('First example in the song')).toBeInTheDocument()
+    expect(document.querySelector('.flashcard-example-chinese .is-vocabulary')).toHaveTextContent('其实')
+    expect(screen.getByRole('button', { name: /see in song/i })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Familiar' }))
     await waitFor(() => expect(screen.getByLabelText('Flashcard learning progress').querySelector('.mastery-legend .learning')).toHaveTextContent('1 learning'))
 
@@ -286,6 +290,11 @@ describe('Verse catalogue learning experience', () => {
     fireEvent.click(screen.getByRole('button', { name: /reveal answer/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Not familiar' }))
     await waitFor(() => expect(screen.getByLabelText('Flashcard learning progress').querySelector('.mastery-legend .review')).toHaveTextContent('1 review more'))
+
+    fireEvent.click(screen.getByRole('button', { name: /reveal answer/i }))
+    fireEvent.click(screen.getByRole('button', { name: /see in song/i }))
+    expect(screen.getByRole('heading', { name: '烂片剧情' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Vocabulary details for 其实')).toBeInTheDocument()
   })
 
   it('keeps playback moving when a word in the active line is selected', () => {

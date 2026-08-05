@@ -2,7 +2,7 @@ services:
   - type: web
     name: learn-language-with-song-api-azhang4216
     runtime: node
-    plan: free
+    plan: starter
     region: oregon
     buildCommand: npm ci
     startCommand: npm run db:migrate && npm run start:api
@@ -21,6 +21,8 @@ services:
         value: https://azhang4216.github.io
       - key: SESSION_DAYS
         value: 30
+      - key: OPENAI_METADATA_MODEL
+        value: gpt-5.6-luna
 
 databases:
   - name: learn-language-with-song-db

@@ -15,6 +15,18 @@ export interface VocabularyOccurrence {
   token: LyricToken
 }
 
+export const firstVocabularyOccurrence = (
+  song: Song,
+  sourceText: string,
+): VocabularyOccurrence | undefined => {
+  const identity = vocabularyIdentity(sourceText)
+  for (const cue of song.cues) {
+    const token = cue.tokens?.find((item) => tokenVocabularyIdentity(item) === identity)
+    if (token) return { cue, token }
+  }
+  return undefined
+}
+
 export const matchingVocabularyOccurrences = (
   song: Song,
   selectedToken: LyricToken,
