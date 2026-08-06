@@ -1,6 +1,6 @@
 -- Replace the original dictionary-concatenated English for 跳楼机 with the
 -- Groq/Qwen contextual draft, lightly edited for natural lyrical English.
-WITH translations(source_text, natural) AS (
+WITH translations(source_text, english_text) AS (
   SELECT key, value
   FROM jsonb_each_text($verse$
     {
@@ -49,11 +49,11 @@ WITH translations(source_text, natural) AS (
     song.id,
     jsonb_agg(
       CASE
-        WHEN translations.natural IS NULL THEN cue.item
+        WHEN translations.english_text IS NULL THEN cue.item
         ELSE jsonb_set(
           cue.item,
           '{translations,natural}',
-          to_jsonb(translations.natural),
+          to_jsonb(translations.english_text),
           true
         )
       END
