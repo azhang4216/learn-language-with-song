@@ -196,6 +196,24 @@ interface ContextualLineDraft {
   tokens?: unknown
 }
 
+const expandGroqLine = (value: unknown): ContextualLineDraft => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
+  const line = value as { translation?: unknown; tokens?: unknown }
+  return {
+    translation: line.translation,
+    tokens: Array.isArray(line.tokens)
+      ? line.tokens.map((token) => Array.isArray(token) && token.length >= 3
+        ? {
+            text: token[0],
+            romanization: token[1],
+            contextualMeaning: token[2],
+            alternativeMeanings: [],
+          }
+        : token)
+      : line.tokens,
+  }
+}
+
 const responseText = (response: OpenAIResponse): string | undefined => response.output
   ?.flatMap((item) => item.content ?? [])
   .find((item) => item.type === 'output_text')
@@ -287,9 +305,9 @@ export const enrichChineseLyricsWithContext = async (
               'Write idiomatic, emotionally coherent English for each complete lyric line; it must read naturally, never like concatenated dictionary definitions.',
               'Use the whole song to infer omitted subjects, metaphors, slang, and the most plausible meaning, but do not invent events absent from the lyrics.',
               'Regroup each line into useful words and phrases. Token text joined together must exactly reproduce that Chinese line, ignoring whitespace.',
-              'Give tone-mark pinyin, one short contextual English meaning, and up to four useful alternative meanings for every token.',
+              'Give tone-mark pinyin and one short contextual English meaning for every token.',
               'Preserve learningLines order.',
-              'Return a JSON object exactly shaped as {"lines":[{"translation":"natural English","tokens":[{"text":"exact Chinese","romanization":"tone-mark pinyin","contextualMeaning":"short English","alternativeMeanings":["other meaning"]}]}]}.',
+              'Keep the response compact. Return a JSON object exactly shaped as {"lines":[{"translation":"natural English","tokens":[["exact Chinese","tone-mark pinyin","short contextual English meaning"]]}]}.',
               'Return JSON only, without markdown or commentary.',
             ].join(' '),
           },
@@ -308,7 +326,9 @@ export const enrichChineseLyricsWithContext = async (
         reasoning_effort: 'none',
         response_format: { type: 'json_object' },
         temperature: 0.25,
-        max_completion_tokens: 8_000,
+        // Groq's free tier enforces input plus requested output against its TPM
+        // ceiling. The compact tuple schema keeps full songs below that ceiling.
+        max_completion_tokens: 5_000,
       } : {
         model: options.model ?? 'gpt-5.6-terra',
         reasoning: { effort: 'low' },
@@ -420,6 +440,9 @@ export const enrichChineseLyricsWithContext = async (
       if (result.status === 401 || result.status === 403) {
         return withWarning(`The ${providerName} API key could not run contextual enrichment. Check the key, then retry.`)
       }
+      if (result.status === 413) {
+        return withWarning(`${providerName} rejected this draft as too large. Shorten the lyrics or reduce the configured output limit, then retry.`)
+      }
       return withWarning(`Context-aware enrichment failed (${providerName} ${result.status}). Check the backend logs, then retry.`)
     }
     const payload = await result.json() as OpenAIResponse | GroqResponse
@@ -434,7 +457,10 @@ export const enrichChineseLyricsWithContext = async (
 
     const contextualBySource = new Map<string, EnrichedLyricLine>()
     for (const [index, line] of uniqueLines.entries()) {
-      const validated = validateContextualLine(parsed.lines[index] as ContextualLineDraft, line)
+      const draft = provider === 'groq'
+        ? expandGroqLine(parsed.lines[index])
+        : parsed.lines[index] as ContextualLineDraft
+      const validated = validateContextualLine(draft, line)
       if (!validated) {
         return withWarning('Context-aware enrichment changed or omitted Chinese text, so the safe dictionary draft was kept.')
       }

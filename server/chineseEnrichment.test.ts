@@ -111,6 +111,7 @@ describe('Chinese lyric enrichment', () => {
         model: 'qwen/qwen3.6-27b',
         reasoning_effort: 'none',
         response_format: { type: 'json_object' },
+        max_completion_tokens: 5_000,
       })
       return Response.json({
         choices: [{
@@ -119,14 +120,14 @@ describe('Chinese lyric enrichment', () => {
               lines: [{
                 translation: 'You are gone, leaving only my tear-reddened eyes behind.',
                 tokens: [
-                  { text: '你', romanization: 'nǐ', contextualMeaning: 'you', alternativeMeanings: [] },
-                  { text: '走了', romanization: 'zǒu le', contextualMeaning: 'are gone', alternativeMeanings: ['left'] },
-                  { text: '只', romanization: 'zhǐ', contextualMeaning: 'only', alternativeMeanings: [] },
-                  { text: '留下', romanization: 'liúxià', contextualMeaning: 'leave behind', alternativeMeanings: [] },
-                  { text: '我', romanization: 'wǒ', contextualMeaning: 'my', alternativeMeanings: ['me'] },
-                  { text: '双眼', romanization: 'shuāngyǎn', contextualMeaning: 'eyes', alternativeMeanings: [] },
-                  { text: '的', romanization: 'de', contextualMeaning: 'linking particle', alternativeMeanings: [] },
-                  { text: '红', romanization: 'hóng', contextualMeaning: 'red from crying', alternativeMeanings: ['red'] },
+                  ['你', 'nǐ', 'you'],
+                  ['走了', 'zǒu le', 'are gone'],
+                  ['只', 'zhǐ', 'only'],
+                  ['留下', 'liúxià', 'leave behind'],
+                  ['我', 'wǒ', 'my'],
+                  ['双眼', 'shuāngyǎn', 'eyes'],
+                  ['的', 'de', 'linking particle'],
+                  ['红', 'hóng', 'red from crying'],
                 ],
               }],
             }),
