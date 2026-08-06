@@ -19,7 +19,7 @@ The MVP includes:
 - A guided YouTube contribution flow that intelligently extracts editable song details, accepts ungrouped simplified or traditional lyrics, generates dictionary-backed word groups/pinyin/meanings, and provides a full review editor before timing
 - One-pass space-bar timing, return-to-edit support, and prepared Verse JSON upload
 
-The MVP intentionally has no email, email verification, password reset, or social sign-in. Private drafts, admin review, and publishing approval are planned for P2.
+The MVP intentionally has no email, email verification, password reset, or social sign-in. Private drafts, admin review, publishing approval, and cross-video duplicate-song recognition are planned for P2; see [TODO.md](./TODO.md).
 
 Only YouTube is used for playback. Verse stores YouTube references and lesson metadata; it does not store commercial audio.
 
