@@ -21,6 +21,8 @@ services:
         value: https://azhang4216.github.io
       - key: SESSION_DAYS
         value: 30
+      - key: OPENAI_API_KEY
+        sync: false
       - key: OPENAI_METADATA_MODEL
         value: gpt-5.6-luna
       - key: OPENAI_LYRICS_MODEL

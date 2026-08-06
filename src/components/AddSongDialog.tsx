@@ -378,7 +378,7 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
               <CheckIcon />
               {enrichment.source === 'ai'
                 ? 'Context-aware draft based on the whole song · click any word to inspect or change its meaning'
-                : 'Dictionary fallback · please review meanings and English carefully'}
+                : enrichment.warning ?? 'Dictionary fallback · please review meanings and English carefully'}
             </div>
             <div className="review-learning-layout">
               <div className="review-lyrics-preview">

@@ -54,5 +54,6 @@ export interface EnrichedLyricLine {
 export interface LyricsEnrichment {
   sourceLocale: 'zh-Hans' | 'zh-Hant'
   source: 'ai' | 'dictionary'
+  warning?: string
   lines: EnrichedLyricLine[]
 }

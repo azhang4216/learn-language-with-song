@@ -245,12 +245,17 @@ export const enrichChineseLyricsWithContext = async (
   options: ContextualEnrichmentOptions = {},
 ): Promise<LyricsEnrichment> => {
   const fallback = enrichChineseLyrics(lyrics, script)
-  if (!options.apiKey) return fallback
+  const withWarning = (warning: string): LyricsEnrichment => ({ ...fallback, warning })
+  if (!options.apiKey) {
+    return withWarning('Context-aware enrichment is unavailable because OPENAI_API_KEY is not configured on the backend.')
+  }
 
   const uniqueLines = [...new Map(fallback.lines.map((line) => [line.sourceText, line])).values()]
   // Extremely long documents still get a safe, editable dictionary draft rather than
   // an incomplete AI response. Normal song lyrics are well below this threshold.
-  if (uniqueLines.length > 120) return fallback
+  if (uniqueLines.length > 120) {
+    return withWarning('This draft is too long for contextual enrichment, so it is using dictionary suggestions.')
+  }
 
   try {
     const result = await (options.request ?? fetch)('https://api.openai.com/v1/responses', {
@@ -348,16 +353,24 @@ export const enrichChineseLyricsWithContext = async (
       }),
       signal: AbortSignal.timeout(60_000),
     })
-    if (!result.ok) return fallback
+    if (!result.ok) {
+      const upstreamMessage = (await result.text()).slice(0, 1_000)
+      console.error(`OpenAI lyric enrichment failed (${result.status}): ${upstreamMessage}`)
+      return withWarning(`Context-aware enrichment failed (OpenAI ${result.status}), so this draft is using dictionary suggestions.`)
+    }
     const text = responseText(await result.json() as OpenAIResponse)
-    if (!text) return fallback
+    if (!text) return withWarning('Context-aware enrichment returned no usable result, so this draft is using dictionary suggestions.')
     const parsed = JSON.parse(text) as { lines?: unknown }
-    if (!Array.isArray(parsed.lines) || parsed.lines.length !== uniqueLines.length) return fallback
+    if (!Array.isArray(parsed.lines) || parsed.lines.length !== uniqueLines.length) {
+      return withWarning('Context-aware enrichment returned incomplete lines, so this draft is using dictionary suggestions.')
+    }
 
     const contextualBySource = new Map<string, EnrichedLyricLine>()
     for (const [index, line] of uniqueLines.entries()) {
       const validated = validateContextualLine(parsed.lines[index] as ContextualLineDraft, line)
-      if (!validated) return fallback
+      if (!validated) {
+        return withWarning('Context-aware enrichment changed or omitted Chinese text, so the safe dictionary draft was kept.')
+      }
       contextualBySource.set(line.sourceText, validated)
     }
 
@@ -366,7 +379,8 @@ export const enrichChineseLyricsWithContext = async (
       source: 'ai',
       lines: fallback.lines.map((line) => contextualBySource.get(line.sourceText) ?? line),
     }
-  } catch {
-    return fallback
+  } catch (error) {
+    console.error('OpenAI lyric enrichment failed:', error)
+    return withWarning('Context-aware enrichment could not be completed, so this draft is using dictionary suggestions.')
   }
 }

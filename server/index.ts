@@ -87,7 +87,7 @@ app.use(express.json({ limit: '256kb', type: 'application/json' }))
 
 app.get('/api/health', asyncRoute(async (_request, response) => {
   await db.query('SELECT 1')
-  response.json({ ok: true })
+  response.json({ ok: true, aiConfigured: Boolean(config.openAiApiKey) })
 }))
 
 app.post('/api/auth/register', asyncRoute(async (request, response) => {
