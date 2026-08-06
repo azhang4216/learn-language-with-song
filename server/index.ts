@@ -87,7 +87,11 @@ app.use(express.json({ limit: '256kb', type: 'application/json' }))
 
 app.get('/api/health', asyncRoute(async (_request, response) => {
   await db.query('SELECT 1')
-  response.json({ ok: true, aiConfigured: Boolean(config.openAiApiKey) })
+  response.json({
+    ok: true,
+    aiConfigured: Boolean(config.groqApiKey || config.openAiApiKey),
+    aiProvider: config.groqApiKey ? 'groq' : config.openAiApiKey ? 'openai' : null,
+  })
 }))
 
 app.post('/api/auth/register', asyncRoute(async (request, response) => {
@@ -127,10 +131,9 @@ app.post('/api/song-tools/youtube-metadata', requireAuth, asyncRoute(async (requ
       const inferred = await inferYouTubeMetadata(
         typeof metadata.title === 'string' ? metadata.title : '',
         typeof metadata.author_name === 'string' ? metadata.author_name : '',
-        {
-          apiKey: config.openAiApiKey,
-          model: config.openAiMetadataModel,
-        },
+        config.groqApiKey
+          ? { apiKey: config.groqApiKey, model: config.groqMetadataModel, provider: 'groq' }
+          : { apiKey: config.openAiApiKey, model: config.openAiMetadataModel, provider: 'openai' },
       )
       title = inferred.title
       artist = inferred.artist
@@ -161,12 +164,25 @@ app.post('/api/song-tools/enrich-lyrics', requireAuth, asyncRoute(async (request
   if (!lineCount) throw new HttpError(400, 'Add at least one Chinese lyric line.')
   if (lineCount > 500) throw new HttpError(400, 'A lesson can contain at most 500 lyric lines.')
 
-  response.json(await enrichChineseLyricsWithContext(lyrics, script, {
-    apiKey: config.openAiApiKey,
-    model: config.openAiLyricsModel,
-    title,
-    artist,
-  }))
+  response.json(await enrichChineseLyricsWithContext(
+    lyrics,
+    script,
+    config.groqApiKey
+      ? {
+          apiKey: config.groqApiKey,
+          model: config.groqLyricsModel,
+          provider: 'groq',
+          title,
+          artist,
+        }
+      : {
+          apiKey: config.openAiApiKey,
+          model: config.openAiLyricsModel,
+          provider: 'openai',
+          title,
+          artist,
+        },
+  ))
 }))
 
 app.get('/api/songs', optionalAuth, asyncRoute(async (request, response) => {

@@ -30,7 +30,8 @@ GitHub Pages (React/Vite)
        │ HTTPS + bearer session
        ▼
 Render web service (Express API)
-       ├── OpenAI Responses API (optional metadata interpretation)
+       ├── Groq-hosted Qwen (optional contextual preparation; preferred)
+       ├── OpenAI Responses API (optional fallback when Groq is not configured)
        │ internal DATABASE_URL
        ▼
 Render Postgres (accounts, sessions, songs, likes, words, progress)
@@ -66,7 +67,7 @@ Render free Postgres databases expire after 30 days, so this MVP database must b
 
 ## Activate intelligent song preparation
 
-The backend always has local fallbacks for YouTube metadata, Chinese word segmentation, pinyin, and dictionary definitions. When an OpenAI key is configured, the Responses API also:
+The backend always has local fallbacks for YouTube metadata, Chinese word segmentation, pinyin, and dictionary definitions. For the contextual pass it supports [Groq-hosted Qwen](https://console.groq.com/docs/model/qwen/qwen3.6-27b) as the preferred provider, with OpenAI as an optional fallback. The model:
 
 - interprets ambiguous video titles into a strict song-title/artist result;
 - reads the whole song before grouping words and choosing contextual meanings;
@@ -74,13 +75,18 @@ The backend always has local fallbacks for YouTube metadata, Chinese word segmen
 
 The contributor reviews and can edit every result before publishing.
 
-To activate the model on Render:
+For the low-traffic MVP, use Groq's free developer tier:
 
-1. Open the `learn-language-with-song-api-azhang4216` web service.
-2. Open **Environment** and add a secret named `OPENAI_API_KEY`.
-3. Save the change and let Render redeploy the service.
+1. Sign in to [GroqCloud](https://console.groq.com/) and open [API Keys](https://console.groq.com/keys).
+2. Select **Create API Key**, copy the new key, and keep it private.
+3. In Render, open the `learn-language-with-song-api-azhang4216` web service.
+4. Open **Environment** and add a secret named `GROQ_API_KEY` with the copied value.
+5. Save the change and let Render redeploy the service.
+6. Open `/api/health` on the API. It should include `"aiProvider":"groq"`.
 
-The Blueprint uses `OPENAI_METADATA_MODEL=gpt-5.6-luna` for the small metadata extraction and `OPENAI_LYRICS_MODEL=gpt-5.6-terra` for the more nuanced translation task. You can override either in Render. Keep `OPENAI_API_KEY` only on the backend—never add it to a `VITE_` variable or GitHub Pages.
+The Blueprint uses `qwen/qwen3.6-27b` for both metadata and contextual lyric preparation. `GROQ_METADATA_MODEL` and `GROQ_LYRICS_MODEL` can override it. When `GROQ_API_KEY` is present, requests use Groq exclusively; an error or free-tier rate limit does not fall through to OpenAI and create an unexpected charge. `OPENAI_API_KEY` is used only when no Groq key is configured, so it may be removed from Render if a zero-OpenAI-spend setup is preferred.
+
+Keep every provider key on the Render backend. Never add one to a `VITE_` variable, GitHub Pages, or committed source code. Groq controls and may change its free-tier limits; if the limit is reached, Verse keeps an editable dictionary-backed draft and offers a retry after the limit resets.
 
 ## Connect GitHub Pages to Render
 

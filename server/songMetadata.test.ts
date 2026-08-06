@@ -48,4 +48,26 @@ describe('YouTube song metadata inference', () => {
       request: request as typeof fetch,
     })).resolves.toMatchObject({ title: 'Song', artist: 'Artist', source: 'heuristic' })
   })
+
+  it('uses Groq JSON mode when Qwen is configured', async () => {
+    const request = vi.fn().mockResolvedValue(Response.json({
+      choices: [{ message: { content: JSON.stringify({ title: '跳楼机', artist: 'LBI利比' }) } }],
+    }))
+
+    await expect(inferYouTubeMetadata('raw title', 'raw channel', {
+      apiKey: 'test-groq-key',
+      model: 'qwen/qwen3.6-27b',
+      provider: 'groq',
+      request: request as typeof fetch,
+    })).resolves.toEqual({ title: '跳楼机', artist: 'LBI利比', source: 'llm' })
+    expect(request).toHaveBeenCalledWith(
+      'https://api.groq.com/openai/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const init = request.mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      model: 'qwen/qwen3.6-27b',
+      response_format: { type: 'json_object' },
+    })
+  })
 })

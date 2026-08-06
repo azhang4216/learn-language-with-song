@@ -381,7 +381,7 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
             <div className={`enrichment-review-note ${enrichment.source}`}>
               <CheckIcon />
               <span>{enrichment.source === 'ai'
-                ? 'Context-aware draft based on the whole song · click any word to inspect or change its meaning'
+                ? `${enrichment.provider === 'groq' ? 'Qwen' : 'AI'} contextual draft based on the whole song · click any word to inspect or change its meaning`
                 : enrichment.warning ?? 'Dictionary fallback · please review meanings and English carefully'}</span>
               {enrichment.source !== 'ai' && (
                 <button type="button" onClick={() => void requestLearningDraft()}>Retry contextual draft</button>

@@ -103,4 +103,51 @@ describe('Chinese lyric enrichment', () => {
     ])
     expect(result.lines[0]?.tokens[1]?.glossOptions).toContain('merely')
   })
+
+  it('supports Groq-hosted Qwen while preserving application-side validation', async () => {
+    const request = (async (input: string | URL | Request, init?: RequestInit) => {
+      expect(String(input)).toBe('https://api.groq.com/openai/v1/chat/completions')
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        model: 'qwen/qwen3.6-27b',
+        reasoning_effort: 'none',
+        response_format: { type: 'json_object' },
+      })
+      return Response.json({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              lines: [{
+                translation: 'You are gone, leaving only my tear-reddened eyes behind.',
+                tokens: [
+                  { text: '你', romanization: 'nǐ', contextualMeaning: 'you', alternativeMeanings: [] },
+                  { text: '走了', romanization: 'zǒu le', contextualMeaning: 'are gone', alternativeMeanings: ['left'] },
+                  { text: '只', romanization: 'zhǐ', contextualMeaning: 'only', alternativeMeanings: [] },
+                  { text: '留下', romanization: 'liúxià', contextualMeaning: 'leave behind', alternativeMeanings: [] },
+                  { text: '我', romanization: 'wǒ', contextualMeaning: 'my', alternativeMeanings: ['me'] },
+                  { text: '双眼', romanization: 'shuāngyǎn', contextualMeaning: 'eyes', alternativeMeanings: [] },
+                  { text: '的', romanization: 'de', contextualMeaning: 'linking particle', alternativeMeanings: [] },
+                  { text: '红', romanization: 'hóng', contextualMeaning: 'red from crying', alternativeMeanings: ['red'] },
+                ],
+              }],
+            }),
+          },
+        }],
+      })
+    }) as typeof fetch
+
+    const result = await enrichChineseLyricsWithContext(
+      '你走了只留下我双眼的红',
+      'simplified',
+      {
+        apiKey: 'test-groq-key',
+        model: 'qwen/qwen3.6-27b',
+        provider: 'groq',
+        request,
+      },
+    )
+
+    expect(result).toMatchObject({ source: 'ai', provider: 'groq' })
+    expect(result.lines[0]?.translation).toContain('tear-reddened eyes')
+    expect(result.lines[0]?.tokens.map((token) => token.text).join('')).toBe('你走了只留下我双眼的红')
+  })
 })

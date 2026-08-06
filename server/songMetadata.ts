@@ -8,6 +8,7 @@ interface MetadataOptions {
   apiKey?: string | null
   model?: string
   request?: typeof fetch
+  provider?: 'groq' | 'openai'
 }
 
 interface OpenAIResponse {
@@ -16,6 +17,14 @@ interface OpenAIResponse {
       type?: string
       text?: string
     }>
+  }>
+}
+
+interface GroqResponse {
+  choices?: Array<{
+    message?: {
+      content?: string
+    }
   }>
 }
 
@@ -123,67 +132,87 @@ const responseText = (response: OpenAIResponse): string | undefined => response.
   .find((item) => item.type === 'output_text')
   ?.text
 
-const inferWithOpenAI = async (
+const metadataPrompt = [
+  'Extract the canonical song title and primary performing artist from YouTube metadata.',
+  'Prefer the original-language title over a translated title when both are shown.',
+  'Treat Official, MV, lyric video, audio, visualizer, channel labels, and translations as descriptors, not artist names.',
+  'Use the channel name only as supporting evidence.',
+  'Return a JSON object with exactly two string fields: title and artist.',
+].join(' ')
+
+const inferWithModel = async (
   titleValue: string,
   authorValue: string,
-  options: Required<Pick<MetadataOptions, 'apiKey' | 'model' | 'request'>>,
+  options: Required<Pick<MetadataOptions, 'apiKey' | 'model' | 'request' | 'provider'>>,
 ): Promise<SongMetadata | null> => {
-  const result = await options.request('https://api.openai.com/v1/responses', {
+  const isGroq = options.provider === 'groq'
+  const result = await options.request(
+    isGroq
+      ? 'https://api.groq.com/openai/v1/chat/completions'
+      : 'https://api.openai.com/v1/responses',
+    {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${options.apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: options.model,
-      reasoning: { effort: 'low' },
-      store: false,
-      input: [
-        {
-          role: 'system',
-          content: [
+    body: JSON.stringify(isGroq
+      ? {
+          model: options.model,
+          messages: [
+            { role: 'system', content: metadataPrompt },
             {
-              type: 'input_text',
-              text: [
-                'Extract the canonical song title and primary performing artist from YouTube metadata.',
-                'Prefer the original-language title over a translated title when both are shown.',
-                'Treat Official, MV, lyric video, audio, visualizer, channel labels, and translations as descriptors, not artist names.',
-                'Use the channel name only as supporting evidence. Return only the requested schema.',
-              ].join(' '),
+              role: 'user',
+              content: JSON.stringify({ youtubeTitle: titleValue, youtubeChannel: authorValue }),
             },
           ],
-        },
-        {
-          role: 'user',
-          content: [{
-            type: 'input_text',
-            text: JSON.stringify({ youtubeTitle: titleValue, youtubeChannel: authorValue }),
-          }],
-        },
-      ],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: 'song_metadata',
-          strict: true,
-          schema: {
-            type: 'object',
-            properties: {
-              title: { type: 'string' },
-              artist: { type: 'string' },
+          reasoning_effort: 'none',
+          response_format: { type: 'json_object' },
+          temperature: 0.2,
+          max_completion_tokens: 400,
+        }
+      : {
+          model: options.model,
+          reasoning: { effort: 'low' },
+          store: false,
+          input: [
+            {
+              role: 'system',
+              content: [{ type: 'input_text', text: metadataPrompt }],
             },
-            required: ['title', 'artist'],
-            additionalProperties: false,
+            {
+              role: 'user',
+              content: [{
+                type: 'input_text',
+                text: JSON.stringify({ youtubeTitle: titleValue, youtubeChannel: authorValue }),
+              }],
+            },
+          ],
+          text: {
+            format: {
+              type: 'json_schema',
+              name: 'song_metadata',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  artist: { type: 'string' },
+                },
+                required: ['title', 'artist'],
+                additionalProperties: false,
+              },
+            },
           },
-        },
-      },
-      max_output_tokens: 800,
-    }),
+          max_output_tokens: 800,
+        }),
     signal: AbortSignal.timeout(10_000),
   })
   if (!result.ok) return null
-  const payload = await result.json() as OpenAIResponse
-  const text = responseText(payload)
+  const payload = await result.json() as OpenAIResponse | GroqResponse
+  const text = isGroq
+    ? (payload as GroqResponse).choices?.[0]?.message?.content
+    : responseText(payload as OpenAIResponse)
   if (!text) return null
   const parsed = JSON.parse(text) as { title?: unknown; artist?: unknown }
   if (typeof parsed.title !== 'string' || typeof parsed.artist !== 'string') return null
@@ -200,10 +229,12 @@ export const inferYouTubeMetadata = async (
   const fallback = inferYouTubeMetadataHeuristically(titleValue, authorValue)
   if (!options.apiKey || !titleValue.trim()) return fallback
   try {
-    return await inferWithOpenAI(titleValue, authorValue, {
+    const provider = options.provider ?? 'openai'
+    return await inferWithModel(titleValue, authorValue, {
       apiKey: options.apiKey,
-      model: options.model ?? 'gpt-5.6-luna',
+      model: options.model ?? (provider === 'groq' ? 'qwen/qwen3.6-27b' : 'gpt-5.6-luna'),
       request: options.request ?? fetch,
+      provider,
     }) ?? fallback
   } catch {
     return fallback

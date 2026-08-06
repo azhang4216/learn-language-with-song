@@ -14,6 +14,9 @@ export const config = {
     .map((value) => value.trim().replace(/\/$/, ''))
     .filter(Boolean),
   sessionDays: Math.max(1, Number(process.env.SESSION_DAYS ?? 30)),
+  groqApiKey: process.env.GROQ_API_KEY?.trim() || null,
+  groqMetadataModel: process.env.GROQ_METADATA_MODEL?.trim() || 'qwen/qwen3.6-27b',
+  groqLyricsModel: process.env.GROQ_LYRICS_MODEL?.trim() || 'qwen/qwen3.6-27b',
   openAiApiKey: process.env.OPENAI_API_KEY?.trim() || null,
   openAiMetadataModel: process.env.OPENAI_METADATA_MODEL?.trim() || 'gpt-5.6-luna',
   openAiLyricsModel: process.env.OPENAI_LYRICS_MODEL?.trim() || 'gpt-5.6-terra',

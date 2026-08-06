@@ -21,6 +21,12 @@ services:
         value: https://azhang4216.github.io
       - key: SESSION_DAYS
         value: 30
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_METADATA_MODEL
+        value: qwen/qwen3.6-27b
+      - key: GROQ_LYRICS_MODEL
+        value: qwen/qwen3.6-27b
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_METADATA_MODEL

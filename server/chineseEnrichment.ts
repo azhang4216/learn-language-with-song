@@ -164,6 +164,7 @@ interface ContextualEnrichmentOptions {
   request?: typeof fetch
   title?: string
   artist?: string
+  provider?: 'groq' | 'openai'
 }
 
 interface OpenAIResponse {
@@ -172,6 +173,14 @@ interface OpenAIResponse {
       type?: string
       text?: string
     }>
+  }>
+}
+
+interface GroqResponse {
+  choices?: Array<{
+    message?: {
+      content?: string
+    }
   }>
 }
 
@@ -246,8 +255,10 @@ export const enrichChineseLyricsWithContext = async (
 ): Promise<LyricsEnrichment> => {
   const fallback = enrichChineseLyrics(lyrics, script)
   const withWarning = (warning: string): LyricsEnrichment => ({ ...fallback, warning })
+  const provider = options.provider ?? 'openai'
+  const providerName = provider === 'groq' ? 'Groq' : 'OpenAI'
   if (!options.apiKey) {
-    return withWarning('Context-aware enrichment is unavailable because OPENAI_API_KEY is not configured on the backend.')
+    return withWarning('Context-aware enrichment is unavailable because no AI provider key is configured on the backend.')
   }
 
   const uniqueLines = [...new Map(fallback.lines.map((line) => [line.sourceText, line])).values()]
@@ -258,13 +269,47 @@ export const enrichChineseLyricsWithContext = async (
   }
 
   try {
-    const result = await (options.request ?? fetch)('https://api.openai.com/v1/responses', {
+    const result = await (options.request ?? fetch)(provider === 'groq'
+      ? 'https://api.groq.com/openai/v1/chat/completions'
+      : 'https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${options.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
+      body: JSON.stringify(provider === 'groq' ? {
+        model: options.model ?? 'qwen/qwen3.6-27b',
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'Create accurate learner annotations for Chinese song lyrics.',
+              'Write idiomatic, emotionally coherent English for each complete lyric line; it must read naturally, never like concatenated dictionary definitions.',
+              'Use the whole song to infer omitted subjects, metaphors, slang, and the most plausible meaning, but do not invent events absent from the lyrics.',
+              'Regroup each line into useful words and phrases. Token text joined together must exactly reproduce that Chinese line, ignoring whitespace.',
+              'Give tone-mark pinyin, one short contextual English meaning, and up to four useful alternative meanings for every token.',
+              'Preserve learningLines order.',
+              'Return a JSON object exactly shaped as {"lines":[{"translation":"natural English","tokens":[{"text":"exact Chinese","romanization":"tone-mark pinyin","contextualMeaning":"short English","alternativeMeanings":["other meaning"]}]}]}.',
+              'Return JSON only, without markdown or commentary.',
+            ].join(' '),
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              song: {
+                title: options.title?.trim() || 'Unknown title',
+                artist: options.artist?.trim() || 'Unknown artist',
+              },
+              songContext: fallback.lines.map((line) => line.sourceText),
+              learningLines: uniqueLines.map((line) => ({ text: line.sourceText })),
+            }),
+          },
+        ],
+        reasoning_effort: 'none',
+        response_format: { type: 'json_object' },
+        temperature: 0.25,
+        max_completion_tokens: 8_000,
+      } : {
         model: options.model ?? 'gpt-5.6-terra',
         reasoning: { effort: 'low' },
         store: false,
@@ -355,7 +400,7 @@ export const enrichChineseLyricsWithContext = async (
     })
     if (!result.ok) {
       const upstreamMessage = (await result.text()).slice(0, 1_000)
-      console.error(`OpenAI lyric enrichment failed (${result.status}): ${upstreamMessage}`)
+      console.error(`${providerName} lyric enrichment failed (${result.status}): ${upstreamMessage}`)
       let errorCode = ''
       try {
         const problem = JSON.parse(upstreamMessage) as { error?: { code?: unknown; type?: unknown } }
@@ -366,18 +411,21 @@ export const enrichChineseLyricsWithContext = async (
       } catch {
         // The status-specific message below is still actionable without a JSON error body.
       }
-      if (result.status === 429 && errorCode.includes('quota')) {
+      if (provider === 'openai' && result.status === 429 && errorCode.includes('quota')) {
         return withWarning('The OpenAI project has no available API quota. Add API billing or credits, then retry the contextual draft.')
       }
       if (result.status === 429) {
-        return withWarning('OpenAI is rate-limiting contextual enrichment. Wait a moment, then retry the contextual draft.')
+        return withWarning(`${providerName} is rate-limiting contextual enrichment. Wait for the free-tier limit to reset, then retry.`)
       }
       if (result.status === 401 || result.status === 403) {
-        return withWarning('The OpenAI API key could not run contextual enrichment. Check the key and its model permissions, then retry.')
+        return withWarning(`The ${providerName} API key could not run contextual enrichment. Check the key, then retry.`)
       }
-      return withWarning(`Context-aware enrichment failed (OpenAI ${result.status}). Check the backend logs, then retry.`)
+      return withWarning(`Context-aware enrichment failed (${providerName} ${result.status}). Check the backend logs, then retry.`)
     }
-    const text = responseText(await result.json() as OpenAIResponse)
+    const payload = await result.json() as OpenAIResponse | GroqResponse
+    const text = provider === 'groq'
+      ? (payload as GroqResponse).choices?.[0]?.message?.content
+      : responseText(payload as OpenAIResponse)
     if (!text) return withWarning('Context-aware enrichment returned no usable result, so this draft is using dictionary suggestions.')
     const parsed = JSON.parse(text) as { lines?: unknown }
     if (!Array.isArray(parsed.lines) || parsed.lines.length !== uniqueLines.length) {
@@ -396,10 +444,11 @@ export const enrichChineseLyricsWithContext = async (
     return {
       ...fallback,
       source: 'ai',
+      provider,
       lines: fallback.lines.map((line) => contextualBySource.get(line.sourceText) ?? line),
     }
   } catch (error) {
-    console.error('OpenAI lyric enrichment failed:', error)
-    return withWarning('Context-aware enrichment could not be completed, so this draft is using dictionary suggestions.')
+    console.error(`${providerName} lyric enrichment failed:`, error)
+    return withWarning(`${providerName} contextual enrichment could not be completed, so this draft is using dictionary suggestions.`)
   }
 }
