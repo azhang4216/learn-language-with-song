@@ -112,6 +112,10 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
       return
     }
     setIssues([])
+    await requestLearningDraft()
+  }
+
+  const requestLearningDraft = async () => {
     setStep('loading')
     try {
       const result = await enrichChineseLyrics(lyrics, script, title, artist)
@@ -376,9 +380,12 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
             </div>
             <div className={`enrichment-review-note ${enrichment.source}`}>
               <CheckIcon />
-              {enrichment.source === 'ai'
+              <span>{enrichment.source === 'ai'
                 ? 'Context-aware draft based on the whole song · click any word to inspect or change its meaning'
-                : enrichment.warning ?? 'Dictionary fallback · please review meanings and English carefully'}
+                : enrichment.warning ?? 'Dictionary fallback · please review meanings and English carefully'}</span>
+              {enrichment.source !== 'ai' && (
+                <button type="button" onClick={() => void requestLearningDraft()}>Retry contextual draft</button>
+              )}
             </div>
             <div className="review-learning-layout">
               <div className="review-lyrics-preview">

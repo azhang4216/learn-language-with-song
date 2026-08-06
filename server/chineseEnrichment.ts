@@ -356,7 +356,26 @@ export const enrichChineseLyricsWithContext = async (
     if (!result.ok) {
       const upstreamMessage = (await result.text()).slice(0, 1_000)
       console.error(`OpenAI lyric enrichment failed (${result.status}): ${upstreamMessage}`)
-      return withWarning(`Context-aware enrichment failed (OpenAI ${result.status}), so this draft is using dictionary suggestions.`)
+      let errorCode = ''
+      try {
+        const problem = JSON.parse(upstreamMessage) as { error?: { code?: unknown; type?: unknown } }
+        errorCode = [problem.error?.code, problem.error?.type]
+          .filter((value): value is string => typeof value === 'string')
+          .join(' ')
+          .toLocaleLowerCase()
+      } catch {
+        // The status-specific message below is still actionable without a JSON error body.
+      }
+      if (result.status === 429 && errorCode.includes('quota')) {
+        return withWarning('The OpenAI project has no available API quota. Add API billing or credits, then retry the contextual draft.')
+      }
+      if (result.status === 429) {
+        return withWarning('OpenAI is rate-limiting contextual enrichment. Wait a moment, then retry the contextual draft.')
+      }
+      if (result.status === 401 || result.status === 403) {
+        return withWarning('The OpenAI API key could not run contextual enrichment. Check the key and its model permissions, then retry.')
+      }
+      return withWarning(`Context-aware enrichment failed (OpenAI ${result.status}). Check the backend logs, then retry.`)
     }
     const text = responseText(await result.json() as OpenAIResponse)
     if (!text) return withWarning('Context-aware enrichment returned no usable result, so this draft is using dictionary suggestions.')
