@@ -137,6 +137,7 @@ const inferWithOpenAI = async (
     body: JSON.stringify({
       model: options.model,
       reasoning: { effort: 'low' },
+      store: false,
       input: [
         {
           role: 'system',

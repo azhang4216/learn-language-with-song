@@ -4,7 +4,7 @@ import { loginWithPassword, optionalAuth, registerWithPassword, requireAuth } fr
 import { config } from './config'
 import { db } from './db'
 import { assertString, HttpError } from './http'
-import { enrichChineseLyrics } from './chineseEnrichment'
+import { enrichChineseLyricsWithContext } from './chineseEnrichment'
 import { inferYouTubeMetadata } from './songMetadata'
 import { parseCatalogSongDraft, SongValidationError } from '../src/lib/songValidation'
 import { parseYouTubeVideoId, youtubeThumbnailUrl, youtubeWatchUrl } from '../src/lib/youtubeUrl'
@@ -151,6 +151,8 @@ app.post('/api/song-tools/youtube-metadata', requireAuth, asyncRoute(async (requ
 
 app.post('/api/song-tools/enrich-lyrics', requireAuth, asyncRoute(async (request, response) => {
   const lyrics = assertString(request.body?.lyrics, 'lyrics', 100_000)
+  const title = typeof request.body?.title === 'string' ? request.body.title.trim().slice(0, 160) : ''
+  const artist = typeof request.body?.artist === 'string' ? request.body.artist.trim().slice(0, 160) : ''
   const script = request.body?.script
   if (script !== 'simplified' && script !== 'traditional') {
     throw new HttpError(400, 'script must be “simplified” or “traditional”.')
@@ -159,7 +161,12 @@ app.post('/api/song-tools/enrich-lyrics', requireAuth, asyncRoute(async (request
   if (!lineCount) throw new HttpError(400, 'Add at least one Chinese lyric line.')
   if (lineCount > 500) throw new HttpError(400, 'A lesson can contain at most 500 lyric lines.')
 
-  response.json(enrichChineseLyrics(lyrics, script))
+  response.json(await enrichChineseLyricsWithContext(lyrics, script, {
+    apiKey: config.openAiApiKey,
+    model: config.openAiLyricsModel,
+    title,
+    artist,
+  }))
 }))
 
 app.get('/api/songs', optionalAuth, asyncRoute(async (request, response) => {

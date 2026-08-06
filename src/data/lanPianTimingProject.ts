@@ -11,6 +11,7 @@ export const lanPianTimingProject: TimingProject = {
     durationMs: 206_080,
     youtubeVideoId: 'n49Zi0fIGlA',
     youtubeUrl: 'https://www.youtube.com/watch?v=n49Zi0fIGlA',
+    thumbnailUrl: 'https://i.ytimg.com/vi/n49Zi0fIGlA/hqdefault.jpg',
   },
   lines: [
     '打开电视却找不到遥控',

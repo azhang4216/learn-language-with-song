@@ -50,6 +50,13 @@ const conciseGloss = (definition: string): string => definition
   .slice(0, 3)
   .join('; ')
 
+const unique = (values: string[]): string[] => [...new Map(
+  values
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => [value.toLocaleLowerCase(), value] as const),
+).values()]
+
 type ChineseScript = 'simplified' | 'traditional'
 type DictionaryEntry = NonNullable<ReturnType<typeof hanzi.definitionLookup>>[number]
 
@@ -102,13 +109,21 @@ const detectScript = (lyrics: string, requested: ChineseScript): ChineseScript =
 }
 
 const enrichToken = (text: string, script: 'simplified' | 'traditional'): EnrichedLyricToken => {
-  if (isPunctuation(text)) return { text, romanization: text, gloss: 'punctuation' }
+  if (isPunctuation(text)) {
+    return { text, romanization: text, gloss: 'punctuation', glossOptions: ['punctuation'] }
+  }
   const entries = dictionaryEntries(text, script)
   const entry = entries.find((item) => item.pinyin === item.pinyin.toLocaleLowerCase()) ?? entries[0]
+  const glossOptions = unique(entries.flatMap((item) => item.definition
+    .split('/')
+    .map((part) => part.trim())
+    .filter((part) => part && !part.startsWith('CL:')))).slice(0, 10)
+  const gloss = entry ? conciseGloss(entry.definition) || 'Meaning needs review' : 'Meaning needs review'
   return {
     text,
     romanization: entry ? numberedPinyinToMarks(entry.pinyin) : text,
-    gloss: entry ? conciseGloss(entry.definition) || 'Meaning needs review' : 'Meaning needs review',
+    gloss,
+    glossOptions: unique([gloss, ...glossOptions]),
   }
 }
 
@@ -136,5 +151,222 @@ export const enrichChineseLyrics = (
         .map((token) => enrichToken(token, detectedScript))
       return { sourceText, tokens, translation: draftTranslation(tokens) }
     })
-  return { sourceLocale: detectedScript === 'traditional' ? 'zh-Hant' : 'zh-Hans', lines }
+  return {
+    sourceLocale: detectedScript === 'traditional' ? 'zh-Hant' : 'zh-Hans',
+    source: 'dictionary',
+    lines,
+  }
+}
+
+interface ContextualEnrichmentOptions {
+  apiKey?: string | null
+  model?: string
+  request?: typeof fetch
+  title?: string
+  artist?: string
+}
+
+interface OpenAIResponse {
+  output?: Array<{
+    content?: Array<{
+      type?: string
+      text?: string
+    }>
+  }>
+}
+
+interface ContextualTokenDraft {
+  text?: unknown
+  romanization?: unknown
+  contextualMeaning?: unknown
+  alternativeMeanings?: unknown
+}
+
+interface ContextualLineDraft {
+  translation?: unknown
+  tokens?: unknown
+}
+
+const responseText = (response: OpenAIResponse): string | undefined => response.output
+  ?.flatMap((item) => item.content ?? [])
+  .find((item) => item.type === 'output_text')
+  ?.text
+
+const normalizedChinese = (value: string): string => value.replaceAll(/\s/g, '')
+
+const validateContextualLine = (
+  value: ContextualLineDraft,
+  fallback: EnrichedLyricLine,
+): EnrichedLyricLine | null => {
+  if (typeof value.translation !== 'string' || !value.translation.trim()) return null
+  if (!Array.isArray(value.tokens) || !value.tokens.length) return null
+
+  const drafts = value.tokens as ContextualTokenDraft[]
+  if (drafts.some((token) => (
+    typeof token.text !== 'string'
+      || typeof token.romanization !== 'string'
+      || typeof token.contextualMeaning !== 'string'
+      || !token.text.trim()
+      || !token.romanization.trim()
+      || !token.contextualMeaning.trim()
+      || !Array.isArray(token.alternativeMeanings)
+      || token.alternativeMeanings.some((meaning) => typeof meaning !== 'string')
+  ))) return null
+
+  const joinedChinese = drafts.map((token) => token.text as string).join('')
+  if (normalizedChinese(joinedChinese) !== normalizedChinese(fallback.sourceText)) return null
+
+  return {
+    sourceText: fallback.sourceText,
+    translation: value.translation.trim().slice(0, 600),
+    tokens: drafts.map((token) => {
+      const text = (token.text as string).trim()
+      const gloss = (token.contextualMeaning as string).trim().slice(0, 160)
+      const fallbackOptions = fallback.tokens
+        .filter((item) => text.includes(item.text) || item.text.includes(text))
+        .flatMap((item) => item.glossOptions)
+      return {
+        text,
+        romanization: (token.romanization as string).trim().slice(0, 160),
+        gloss,
+        glossOptions: unique([
+          gloss,
+          ...(token.alternativeMeanings as string[]).map((meaning) => meaning.slice(0, 160)),
+          ...fallbackOptions,
+        ]).slice(0, 10),
+      }
+    }),
+  }
+}
+
+export const enrichChineseLyricsWithContext = async (
+  lyrics: string,
+  script: ChineseScript,
+  options: ContextualEnrichmentOptions = {},
+): Promise<LyricsEnrichment> => {
+  const fallback = enrichChineseLyrics(lyrics, script)
+  if (!options.apiKey) return fallback
+
+  const uniqueLines = [...new Map(fallback.lines.map((line) => [line.sourceText, line])).values()]
+  // Extremely long documents still get a safe, editable dictionary draft rather than
+  // an incomplete AI response. Normal song lyrics are well below this threshold.
+  if (uniqueLines.length > 120) return fallback
+
+  try {
+    const result = await (options.request ?? fetch)('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${options.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: options.model ?? 'gpt-5.6-terra',
+        reasoning: { effort: 'low' },
+        store: false,
+        input: [
+          {
+            role: 'system',
+            content: [{
+              type: 'input_text',
+              text: [
+                'Create accurate learner annotations for Chinese song lyrics.',
+                'Write idiomatic, emotionally coherent English for each complete lyric line; it should read naturally, never like concatenated dictionary definitions.',
+                'Use the whole song to infer omitted subjects, metaphors, slang, and the most plausible meaning, but do not invent events absent from the lyrics.',
+                'Regroup each line into useful words and phrases. The token text joined together must exactly reproduce that Chinese line, ignoring whitespace.',
+                'Give tone-mark pinyin and one short contextual English meaning for every token.',
+                'Include up to four short alternative meanings only when they are genuinely plausible or useful to an editor.',
+                'Preserve the input learningLines array order and return one output line for each item. Return only the requested schema.',
+              ].join(' '),
+            }],
+          },
+          {
+            role: 'user',
+            content: [{
+              type: 'input_text',
+              text: JSON.stringify({
+                song: {
+                  title: options.title?.trim() || 'Unknown title',
+                  artist: options.artist?.trim() || 'Unknown artist',
+                },
+                songContext: fallback.lines.map((line) => line.sourceText),
+                learningLines: uniqueLines.map((line) => ({
+                  text: line.sourceText,
+                  dictionaryDraft: line.tokens.map((token) => ({
+                    text: token.text,
+                    pinyin: token.romanization,
+                    possibleMeanings: token.glossOptions,
+                  })),
+                })),
+              }),
+            }],
+          },
+        ],
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'contextual_chinese_song_annotations',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                lines: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      translation: { type: 'string' },
+                      tokens: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            text: { type: 'string' },
+                            romanization: { type: 'string' },
+                            contextualMeaning: { type: 'string' },
+                            alternativeMeanings: {
+                              type: 'array',
+                              items: { type: 'string' },
+                              maxItems: 4,
+                            },
+                          },
+                          required: ['text', 'romanization', 'contextualMeaning', 'alternativeMeanings'],
+                          additionalProperties: false,
+                        },
+                      },
+                    },
+                    required: ['translation', 'tokens'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ['lines'],
+              additionalProperties: false,
+            },
+          },
+        },
+        max_output_tokens: 20_000,
+      }),
+      signal: AbortSignal.timeout(60_000),
+    })
+    if (!result.ok) return fallback
+    const text = responseText(await result.json() as OpenAIResponse)
+    if (!text) return fallback
+    const parsed = JSON.parse(text) as { lines?: unknown }
+    if (!Array.isArray(parsed.lines) || parsed.lines.length !== uniqueLines.length) return fallback
+
+    const contextualBySource = new Map<string, EnrichedLyricLine>()
+    for (const [index, line] of uniqueLines.entries()) {
+      const validated = validateContextualLine(parsed.lines[index] as ContextualLineDraft, line)
+      if (!validated) return fallback
+      contextualBySource.set(line.sourceText, validated)
+    }
+
+    return {
+      ...fallback,
+      source: 'ai',
+      lines: fallback.lines.map((line) => contextualBySource.get(line.sourceText) ?? line),
+    }
+  } catch {
+    return fallback
+  }
 }

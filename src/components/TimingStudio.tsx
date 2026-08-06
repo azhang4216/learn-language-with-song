@@ -69,6 +69,7 @@ export function TimingStudio({
   const studioRef = useRef<HTMLDivElement>(null)
   const youtubeHostRef = useRef<HTMLDivElement>(null)
   const lineRefs = useRef(new Map<number, HTMLButtonElement>())
+  const autoConnectedRef = useRef(false)
 
   const completedLines = Math.max(0, Math.min(project.lines.length, boundariesMs.length - 1))
   const isComplete = boundariesMs.length === project.lines.length + 1
@@ -125,6 +126,12 @@ export function TimingStudio({
   useEffect(() => {
     studioRef.current?.focus()
   }, [])
+
+  useEffect(() => {
+    if (autoConnectedRef.current) return
+    autoConnectedRef.current = true
+    void connect()
+  }, [connect])
 
   useEffect(() => {
     saveTimingDraft(project, boundariesMs)
@@ -310,7 +317,7 @@ export function TimingStudio({
       <main className="timing-main">
         <aside className="timing-control-panel">
           <div className="timing-track-card">
-            <SongArtwork title={project.track.title} size="medium" />
+            <SongArtwork title={project.track.title} artworkUrl={project.track.thumbnailUrl} size="medium" />
             <div>
               <span className="timing-kicker">{isComplete ? 'Prepared streaming lesson' : 'Streaming timing project'}</span>
               <h1 id="timing-project-title">{project.track.title}</h1>
@@ -326,11 +333,11 @@ export function TimingStudio({
             </div>
           </div>
 
-          {connection !== 'ready' && (
+          {connection === 'error' && (
             <div className="provider-options" role="group" aria-label="Playback source">
-              <button className="provider-button youtube" onClick={() => void connect()} disabled={connection === 'loading'}>
+              <button className="provider-button youtube" onClick={() => void connect()}>
                 <YouTubeIcon />
-                <span><strong>Use YouTube</strong><small>Official full song · no login needed</small></span>
+                <span><strong>Retry YouTube</strong><small>Official full song · no login needed</small></span>
               </button>
             </div>
           )}
@@ -378,23 +385,17 @@ export function TimingStudio({
             </div>
           )}
 
-          <section className="timing-instructions">
-            <span className="timing-kicker">{isComplete ? 'Listening mode' : 'One-pass workflow'}</span>
-            {isComplete ? (
+          {isComplete && (
+            <section className="timing-instructions">
+              <span className="timing-kicker">Listening mode</span>
               <ol>
-                <li>Connect YouTube and press the green play button.</li>
+                <li>Press the green play button.</li>
                 <li>Follow the highlighted pinyin and Chinese lyric.</li>
                 <li>Select any line to replay it from its entrance.</li>
               </ol>
-            ) : (
-              <ol>
-                <li>Connect YouTube and use the green play button.</li>
-                <li>Press <kbd>Space</kbd> when each displayed line begins.</li>
-                <li>Press Space once more when the final lyric ends.</li>
-              </ol>
-            )}
-            <div className="shortcut-row"><span><kbd>P</kbd> Play/pause</span>{!isComplete && <span><kbd>U</kbd> Undo</span>}</div>
-          </section>
+              <div className="shortcut-row"><span><kbd>P</kbd> Play/pause</span></div>
+            </section>
+          )}
 
           <div className="timing-actions">
             {!isComplete && <button onClick={undo} disabled={boundariesMs.length === 0}><UndoIcon /> Undo last</button>}
@@ -409,6 +410,20 @@ export function TimingStudio({
         </aside>
 
         <section className="timing-workspace" aria-label="Lyric timing workspace">
+          {!isComplete && (
+            <section className="one-pass-guide" aria-labelledby="one-pass-title">
+              <div className="one-pass-badge"><TimerIcon /><span>One pass</span></div>
+              <div className="one-pass-copy">
+                <span className="timing-kicker">The whole workflow</span>
+                <h2 id="one-pass-title">Play once. Press Space as each lyric begins.</h2>
+                <div className="one-pass-steps">
+                  <span><b>1</b> Wait for YouTube to connect, then press Play.</span>
+                  <span><b>2</b> At the start of every displayed line, press <kbd>Space</kbd>.</span>
+                  <span><b>3</b> Press Space once more when the final lyric ends.</span>
+                </div>
+              </div>
+            </section>
+          )}
           <div className="timing-progress-header">
             <div>
               <span className="timing-kicker">{isComplete ? 'Synchronized lyrics' : 'Line timing'}</span>

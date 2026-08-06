@@ -42,6 +42,7 @@ export interface EnrichedLyricToken {
   text: string
   romanization: string
   gloss: string
+  glossOptions: string[]
 }
 
 export interface EnrichedLyricLine {
@@ -52,5 +53,6 @@ export interface EnrichedLyricLine {
 
 export interface LyricsEnrichment {
   sourceLocale: 'zh-Hans' | 'zh-Hant'
+  source: 'ai' | 'dictionary'
   lines: EnrichedLyricLine[]
 }

@@ -134,11 +134,12 @@ describe('Verse catalogue learning experience', () => {
       if (url.endsWith('/api/song-tools/enrich-lyrics') && init?.method === 'POST') {
         return Promise.resolve(Response.json({
           sourceLocale: 'zh-Hans',
+          source: 'ai',
           lines: [{
             sourceText: '打开电视',
             tokens: [
-              { text: '打开', romanization: 'dǎkāi', gloss: 'turn on' },
-              { text: '电视', romanization: 'diànshì', gloss: 'television' },
+              { text: '打开', romanization: 'dǎkāi', gloss: 'turn on', glossOptions: ['turn on', 'open'] },
+              { text: '电视', romanization: 'diànshì', gloss: 'television', glossOptions: ['television', 'TV'] },
             ],
             translation: 'Turn on the television.',
           }],
@@ -205,16 +206,19 @@ describe('Verse catalogue learning experience', () => {
     expect(within(dialog).queryByLabelText(/pinyin/i)).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: /generate learning draft/i }))
 
-    expect(await within(dialog).findByDisplayValue('打开 电视')).toBeInTheDocument()
+    expect(await within(dialog).findByRole('button', { name: 'Edit 打开, dǎkāi' })).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Edit 打开, dǎkāi' }))
     expect(within(dialog).getByLabelText('Line 1 word 1 pinyin')).toHaveValue('dǎkāi')
     expect(within(dialog).getByLabelText('Line 1 word 1 meaning')).toHaveValue('turn on')
     expect(within(dialog).getByLabelText('Line 1 natural English translation')).toHaveValue('Turn on the television.')
+    expect(within(dialog).getByRole('button', { name: 'open' })).toBeInTheDocument()
     fireEvent.change(within(dialog).getByLabelText('Line 1 word 1 meaning'), { target: { value: 'switch on' } })
     expect(within(dialog).getByLabelText('Line 1 word 1 meaning')).toHaveValue('switch on')
     fireEvent.click(within(dialog).getByRole('button', { name: /save & start listening sync/i }))
 
     const studio = screen.getByRole('dialog', { name: '测试歌' })
-    expect(within(studio).getByRole('button', { name: /use youtube/i })).toBeInTheDocument()
+    expect(within(studio).getByText(/play once\. press space as each lyric begins/i)).toBeInTheDocument()
+    expect(studio.querySelector('.timing-track-card img')).toHaveAttribute('src', 'https://i.ytimg.com/vi/n49Zi0fIGlA/hqdefault.jpg')
     expect(within(studio).queryByText(/spotify|apple music/i)).not.toBeInTheDocument()
     fireEvent.click(within(studio).getByRole('button', { name: /back to lyric review/i }))
     const reviewDialog = screen.getByRole('dialog', { name: 'Add a YouTube song' })

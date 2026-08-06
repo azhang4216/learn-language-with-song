@@ -59,6 +59,7 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
   const [working, setWorking] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [timingProject, setTimingProject] = useState<TimingProject | null>(null)
+  const [selectedReviewToken, setSelectedReviewToken] = useState({ lineIndex: 0, tokenIndex: 0 })
 
   const continueFromYouTube = async (event: FormEvent) => {
     event.preventDefault()
@@ -113,8 +114,9 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
     setIssues([])
     setStep('loading')
     try {
-      const result = await enrichChineseLyrics(lyrics, script)
+      const result = await enrichChineseLyrics(lyrics, script, title, artist)
       setEnrichment(result)
+      setSelectedReviewToken({ lineIndex: 0, tokenIndex: 0 })
       setScript(result.sourceLocale === 'zh-Hant' ? 'traditional' : 'simplified')
       setStep('review')
     } catch (error) {
@@ -139,8 +141,12 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
         text: word,
         romanization: line.tokens[tokenIndex]?.romanization ?? '',
         gloss: line.tokens[tokenIndex]?.gloss ?? '',
+        glossOptions: line.tokens[tokenIndex]?.glossOptions ?? [],
       })),
     }))
+    setSelectedReviewToken((current) => current.lineIndex === lineIndex
+      ? { lineIndex, tokenIndex: Math.min(current.tokenIndex, Math.max(0, words.length - 1)) }
+      : current)
   }
 
   const beginTiming = () => {
@@ -169,6 +175,7 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
         durationMs: 0,
         youtubeVideoId: videoId,
         youtubeUrl: youtubeWatchUrl(videoId),
+        thumbnailUrl: youtubeThumbnailUrl(videoId),
       },
       lines: enrichment.lines.map((line) => line.tokens.map((token) => token.text).join('')),
       romanizations: enrichment.lines.map((line) => line.tokens.map((token) => token.romanization).join(' ')),
@@ -255,6 +262,8 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
   }
 
   const currentStep = stepNumber(step)
+  const selectedLine = enrichment?.lines[selectedReviewToken.lineIndex]
+  const selectedToken = selectedLine?.tokens[selectedReviewToken.tokenIndex]
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
@@ -357,74 +366,132 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
 
         {step === 'review' && enrichment && (
           <div className="enrichment-review">
-            <div className="composer-step-heading">
-              <span>Step 4</span>
-              <h3>Review the generated language data</h3>
-              <p>Everything below is editable. Check the word grouping, pinyin, meanings, and natural translation before synchronizing.</p>
+            <div className="review-song-heading">
+              <img src={youtubeThumbnailUrl(videoId)} alt="" />
+              <div className="composer-step-heading">
+                <span>Step 4 · Learning preview</span>
+                <h3>{title}</h3>
+                <p>{artist} · Read it like a learner will, then edit anything that does not sound right.</p>
+              </div>
             </div>
-            <div className="enrichment-review-note"><CheckIcon /> Dictionary-generated first draft · changes are saved while this window is open</div>
-            <div className="enrichment-lines">
-              {enrichment.lines.map((line, lineIndex) => (
-                <article className="enrichment-line" key={`line-${lineIndex}`}>
-                  <div className="enrichment-line-heading"><span>{String(lineIndex + 1).padStart(2, '0')}</span><strong>Lyric line</strong></div>
-                  <label className="grouped-words-field">
-                    <span>Chinese word groups · separate groups with spaces</span>
-                    <input
-                      value={line.tokens.map((token) => token.text).join(' ')}
-                      onChange={(event) => updateGroupedWords(lineIndex, event.target.value)}
-                      aria-label={`Line ${lineIndex + 1} grouped Chinese words`}
-                    />
-                  </label>
-                  <div className="enrichment-token-list">
-                    {line.tokens.map((token, tokenIndex) => (
-                      <div className="enrichment-token" key={`${lineIndex}-${tokenIndex}`}>
+            <div className={`enrichment-review-note ${enrichment.source}`}>
+              <CheckIcon />
+              {enrichment.source === 'ai'
+                ? 'Context-aware draft based on the whole song · click any word to inspect or change its meaning'
+                : 'Dictionary fallback · please review meanings and English carefully'}
+            </div>
+            <div className="review-learning-layout">
+              <div className="review-lyrics-preview">
+                {enrichment.lines.map((line, lineIndex) => (
+                  <article
+                    className={`review-lyric-line ${selectedReviewToken.lineIndex === lineIndex ? 'is-selected' : ''}`}
+                    key={`line-${lineIndex}`}
+                  >
+                    <span className="review-line-number">{String(lineIndex + 1).padStart(2, '0')}</span>
+                    <div className="review-word-row" lang={enrichment.sourceLocale}>
+                      {line.tokens.map((token, tokenIndex) => (
+                        <button
+                          type="button"
+                          className={selectedReviewToken.lineIndex === lineIndex && selectedReviewToken.tokenIndex === tokenIndex ? 'is-selected' : ''}
+                          key={`${lineIndex}-${tokenIndex}`}
+                          onClick={() => setSelectedReviewToken({ lineIndex, tokenIndex })}
+                          aria-label={`Edit ${token.text}, ${token.romanization}`}
+                        >
+                          <span lang="zh-Latn-pinyin">{token.romanization}</span>
+                          <strong>{token.text}</strong>
+                        </button>
+                      ))}
+                    </div>
+                    <label className="review-translation-field">
+                      <span>Natural English</span>
+                      <textarea
+                        value={line.translation}
+                        onChange={(event) => updateLine(lineIndex, (currentLine) => ({ ...currentLine, translation: event.target.value }))}
+                        aria-label={`Line ${lineIndex + 1} natural English translation`}
+                      />
+                    </label>
+                    <details className="review-language-details">
+                      <summary>Adjust Chinese grouping or pinyin</summary>
+                      <label className="grouped-words-field">
+                        <span>Word groups · separate with spaces</span>
                         <input
-                          className="token-pinyin"
-                          value={token.romanization}
-                          onChange={(event) => updateLine(lineIndex, (currentLine) => ({
-                            ...currentLine,
-                            tokens: currentLine.tokens.map((currentToken, index) => index === tokenIndex
-                              ? { ...currentToken, romanization: event.target.value }
-                              : currentToken),
-                          }))}
-                          aria-label={`Line ${lineIndex + 1} word ${tokenIndex + 1} pinyin`}
+                          value={line.tokens.map((token) => token.text).join(' ')}
+                          onChange={(event) => updateGroupedWords(lineIndex, event.target.value)}
+                          aria-label={`Line ${lineIndex + 1} grouped Chinese words`}
                         />
-                        <input
-                          className="token-chinese"
-                          value={token.text}
-                          onChange={(event) => updateLine(lineIndex, (currentLine) => ({
-                            ...currentLine,
-                            sourceText: currentLine.tokens.map((currentToken, index) => index === tokenIndex ? event.target.value : currentToken.text).join(''),
-                            tokens: currentLine.tokens.map((currentToken, index) => index === tokenIndex
-                              ? { ...currentToken, text: event.target.value }
-                              : currentToken),
-                          }))}
-                          aria-label={`Line ${lineIndex + 1} word ${tokenIndex + 1} Chinese`}
-                        />
-                        <input
-                          className="token-gloss"
-                          value={token.gloss}
-                          onChange={(event) => updateLine(lineIndex, (currentLine) => ({
-                            ...currentLine,
-                            tokens: currentLine.tokens.map((currentToken, index) => index === tokenIndex
-                              ? { ...currentToken, gloss: event.target.value }
-                              : currentToken),
-                          }))}
-                          aria-label={`Line ${lineIndex + 1} word ${tokenIndex + 1} meaning`}
-                        />
+                      </label>
+                      <div className="review-pinyin-editors">
+                        {line.tokens.map((token, tokenIndex) => (
+                          <label key={`${lineIndex}-${tokenIndex}-pinyin`}>
+                            <span>{token.text}</span>
+                            <input
+                              value={token.romanization}
+                              onChange={(event) => updateLine(lineIndex, (currentLine) => ({
+                                ...currentLine,
+                                tokens: currentLine.tokens.map((currentToken, index) => index === tokenIndex
+                                  ? { ...currentToken, romanization: event.target.value }
+                                  : currentToken),
+                              }))}
+                              aria-label={`Line ${lineIndex + 1} word ${tokenIndex + 1} pinyin`}
+                            />
+                          </label>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  <label className="natural-translation-field">
-                    <span>Natural English translation</span>
-                    <input
-                      value={line.translation}
-                      onChange={(event) => updateLine(lineIndex, (currentLine) => ({ ...currentLine, translation: event.target.value }))}
-                      aria-label={`Line ${lineIndex + 1} natural English translation`}
-                    />
-                  </label>
-                </article>
-              ))}
+                    </details>
+                  </article>
+                ))}
+              </div>
+              <aside className="review-word-editor" aria-live="polite">
+                {selectedLine && selectedToken && (
+                  <>
+                    <span className="section-eyebrow">Word in context</span>
+                    <div className="review-selected-word">
+                      <span lang="zh-Latn-pinyin">{selectedToken.romanization}</span>
+                      <strong lang={enrichment.sourceLocale}>{selectedToken.text}</strong>
+                    </div>
+                    <p className="review-word-context" lang={enrichment.sourceLocale}>{selectedLine.sourceText}</p>
+                    <label className="review-meaning-field">
+                      <span>Meaning in this line</span>
+                      <input
+                        value={selectedToken.gloss}
+                        onChange={(event) => updateLine(selectedReviewToken.lineIndex, (currentLine) => ({
+                          ...currentLine,
+                          tokens: currentLine.tokens.map((currentToken, index) => index === selectedReviewToken.tokenIndex
+                            ? { ...currentToken, gloss: event.target.value }
+                            : currentToken),
+                        }))}
+                        aria-label={`Line ${selectedReviewToken.lineIndex + 1} word ${selectedReviewToken.tokenIndex + 1} meaning`}
+                      />
+                    </label>
+                    {(selectedToken.glossOptions ?? [selectedToken.gloss]).length > 1 && (
+                      <div className="review-meaning-options" role="group" aria-label="Suggested meanings">
+                        <span>Other possible meanings</span>
+                        <div>
+                          {(selectedToken.glossOptions ?? [selectedToken.gloss]).map((meaning) => (
+                            <button
+                              type="button"
+                              className={meaning === selectedToken.gloss ? 'selected' : ''}
+                              key={meaning}
+                              onClick={() => updateLine(selectedReviewToken.lineIndex, (currentLine) => ({
+                                ...currentLine,
+                                tokens: currentLine.tokens.map((currentToken, index) => index === selectedReviewToken.tokenIndex
+                                  ? { ...currentToken, gloss: meaning }
+                                  : currentToken),
+                              }))}
+                            >
+                              {meaning}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="review-line-translation-preview">
+                      <span>Full line</span>
+                      <p>{selectedLine.translation}</p>
+                    </div>
+                  </>
+                )}
+              </aside>
             </div>
             {issues.length > 0 && <ComposerErrors issues={issues} />}
             <div className="composer-actions review-actions">

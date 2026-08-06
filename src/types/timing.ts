@@ -4,6 +4,7 @@ export interface TimingTrack {
   durationMs: number
   youtubeVideoId: string
   youtubeUrl: string
+  thumbnailUrl?: string
 }
 
 export interface TimingProject {

@@ -56,8 +56,10 @@ export const getYouTubeSongMetadata = (youtubeUrl: string): Promise<YouTubeSongM
 export const enrichChineseLyrics = (
   lyrics: string,
   script: 'simplified' | 'traditional',
+  title: string,
+  artist: string,
 ): Promise<LyricsEnrichment> =>
   apiRequest<LyricsEnrichment>('/song-tools/enrich-lyrics', {
     method: 'POST',
-    body: JSON.stringify({ lyrics, script }),
+    body: JSON.stringify({ lyrics, script, title, artist }),
   })

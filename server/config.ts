@@ -16,4 +16,5 @@ export const config = {
   sessionDays: Math.max(1, Number(process.env.SESSION_DAYS ?? 30)),
   openAiApiKey: process.env.OPENAI_API_KEY?.trim() || null,
   openAiMetadataModel: process.env.OPENAI_METADATA_MODEL?.trim() || 'gpt-5.6-luna',
+  openAiLyricsModel: process.env.OPENAI_LYRICS_MODEL?.trim() || 'gpt-5.6-terra',
 }

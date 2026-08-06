@@ -64,9 +64,15 @@ The Blueprint creates:
 
 Render free Postgres databases expire after 30 days, so this MVP database must be upgraded or replaced before that deadline to preserve accounts and learning progress.
 
-## Activate intelligent YouTube metadata
+## Activate intelligent song preparation
 
-The backend always has a local metadata parser and recognizes original-language patterns such as `利比《跳楼机》`. For more ambiguous video titles, it can use the OpenAI Responses API to return a strict song-title/artist result. The contributor still reviews and can edit both fields.
+The backend always has local fallbacks for YouTube metadata, Chinese word segmentation, pinyin, and dictionary definitions. When an OpenAI key is configured, the Responses API also:
+
+- interprets ambiguous video titles into a strict song-title/artist result;
+- reads the whole song before grouping words and choosing contextual meanings;
+- writes natural line-level English instead of concatenating dictionary definitions.
+
+The contributor reviews and can edit every result before publishing.
 
 To activate the model on Render:
 
@@ -74,7 +80,7 @@ To activate the model on Render:
 2. Open **Environment** and add a secret named `OPENAI_API_KEY`.
 3. Save the change and let Render redeploy the service.
 
-The Blueprint sets `OPENAI_METADATA_MODEL=gpt-5.6-luna`, which is appropriate for this small structured extraction task. You can override it in Render. Keep `OPENAI_API_KEY` only on the backend—never add it to a `VITE_` variable or GitHub Pages.
+The Blueprint uses `OPENAI_METADATA_MODEL=gpt-5.6-luna` for the small metadata extraction and `OPENAI_LYRICS_MODEL=gpt-5.6-terra` for the more nuanced translation task. You can override either in Render. Keep `OPENAI_API_KEY` only on the backend—never add it to a `VITE_` variable or GitHub Pages.
 
 ## Connect GitHub Pages to Render
 
