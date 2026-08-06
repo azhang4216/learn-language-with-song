@@ -303,6 +303,9 @@ export const enrichChineseLyricsWithContext = async (
             content: [
               'Create accurate learner annotations for Chinese song lyrics.',
               'Write idiomatic, emotionally coherent English for each complete lyric line; it must read naturally, never like concatenated dictionary definitions.',
+              'Translate the intended emotion rather than each word literally. Render slang and idioms with a natural English equivalent, and let adjacent lyric fragments read as one continuous sentence.',
+              'For example, 贱 in self-deprecating relationship lyrics can mean pathetic or foolish rather than inexpensive, and 跳楼机 as an amusement ride is a drop tower.',
+              'Avoid awkward phrases such as redness in my eyes, a bout of madness, or the weather was rarely clear.',
               'Use the whole song to infer omitted subjects, metaphors, slang, and the most plausible meaning, but do not invent events absent from the lyrics.',
               'Regroup each line into useful words and phrases. Token text joined together must exactly reproduce that Chinese line, ignoring whitespace.',
               'Give tone-mark pinyin and one short contextual English meaning for every token.',
