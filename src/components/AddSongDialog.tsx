@@ -113,7 +113,9 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
     setIssues([])
     setStep('loading')
     try {
-      setEnrichment(await enrichChineseLyrics(lyrics, script))
+      const result = await enrichChineseLyrics(lyrics, script)
+      setEnrichment(result)
+      setScript(result.sourceLocale === 'zh-Hant' ? 'traditional' : 'simplified')
       setStep('review')
     } catch (error) {
       setIssues(errorMessages(error))
@@ -274,8 +276,13 @@ export function AddSongDialog({ onClose, onPublished }: AddSongDialogProps) {
 
         <ol className="composer-stepper" aria-label="Song contribution progress">
           {['YouTube', 'Details', 'Lyrics', 'Review', 'Sync'].map((label, index) => (
-            <li className={index + 1 === currentStep ? 'active' : index + 1 < currentStep ? 'complete' : ''} key={label}>
-              <span>{index + 1 < currentStep ? <CheckIcon /> : index + 1}</span>{label}
+            <li
+              className={index + 1 === currentStep ? 'active' : index + 1 < currentStep ? 'complete' : ''}
+              aria-current={index + 1 === currentStep ? 'step' : undefined}
+              key={label}
+            >
+              <span>{index + 1 < currentStep ? <CheckIcon /> : index + 1}</span>
+              <strong>{label}</strong>
             </li>
           ))}
         </ol>

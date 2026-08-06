@@ -50,9 +50,60 @@ const conciseGloss = (definition: string): string => definition
   .slice(0, 3)
   .join('; ')
 
+type ChineseScript = 'simplified' | 'traditional'
+type DictionaryEntry = NonNullable<ReturnType<typeof hanzi.definitionLookup>>[number]
+
+const segmentText = (value: string): string[] => {
+  const unicodeSafe: string[] = []
+  for (const token of hanzi.segment(value)) {
+    const previous = unicodeSafe.at(-1)
+    if (previous && /[\uD800-\uDBFF]$/.test(previous) && /^[\uDC00-\uDFFF]/.test(token)) {
+      unicodeSafe[unicodeSafe.length - 1] = `${previous}${token}`
+    } else {
+      unicodeSafe.push(token)
+    }
+  }
+
+  return unicodeSafe.reduce<string[]>((grouped, token) => {
+    const previous = grouped.at(-1)
+    const isNonHanWord = (part: string): boolean =>
+      /^[\p{L}\p{N}]+$/u.test(part) && !/\p{Script=Han}/u.test(part)
+    if (previous && isNonHanWord(previous) && isNonHanWord(token)) {
+      grouped[grouped.length - 1] = `${previous}${token}`
+    } else {
+      grouped.push(token)
+    }
+    return grouped
+  }, [])
+}
+
+const dictionaryEntries = (text: string, script: ChineseScript): DictionaryEntry[] => {
+  const preferredScript = script === 'traditional' ? 't' : 's'
+  const fallbackScript = preferredScript === 't' ? 's' : 't'
+  const preferred = hanzi.definitionLookup(text, preferredScript)
+  if (preferred?.length) return preferred
+  const fallback = hanzi.definitionLookup(text, fallbackScript)
+  if (fallback?.length) return fallback
+  return hanzi.definitionLookup(text) ?? []
+}
+
+const detectScript = (lyrics: string, requested: ChineseScript): ChineseScript => {
+  let simplifiedEvidence = 0
+  let traditionalEvidence = 0
+  for (const token of segmentText(lyrics.replaceAll(/\s/g, ''))) {
+    const simplified = hanzi.definitionLookup(token, 's')
+    const traditional = hanzi.definitionLookup(token, 't')
+    if (simplified?.length && !traditional?.length) simplifiedEvidence += token.length
+    if (traditional?.length && !simplified?.length) traditionalEvidence += token.length
+  }
+  if (traditionalEvidence > simplifiedEvidence) return 'traditional'
+  if (simplifiedEvidence > traditionalEvidence) return 'simplified'
+  return requested
+}
+
 const enrichToken = (text: string, script: 'simplified' | 'traditional'): EnrichedLyricToken => {
   if (isPunctuation(text)) return { text, romanization: text, gloss: 'punctuation' }
-  const entries = hanzi.definitionLookup(text, script === 'traditional' ? 't' : 's')
+  const entries = dictionaryEntries(text, script)
   const entry = entries.find((item) => item.pinyin === item.pinyin.toLocaleLowerCase()) ?? entries[0]
   return {
     text,
@@ -74,15 +125,16 @@ export const enrichChineseLyrics = (
   lyrics: string,
   script: 'simplified' | 'traditional',
 ): LyricsEnrichment => {
+  const detectedScript = detectScript(lyrics, script)
   const lines: EnrichedLyricLine[] = lyrics
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
     .map((sourceText) => {
-      const tokens = hanzi.segment(sourceText)
+      const tokens = segmentText(sourceText)
         .filter((token) => token.trim())
-        .map((token) => enrichToken(token, script))
+        .map((token) => enrichToken(token, detectedScript))
       return { sourceText, tokens, translation: draftTranslation(tokens) }
     })
-  return { sourceLocale: script === 'traditional' ? 'zh-Hant' : 'zh-Hans', lines }
+  return { sourceLocale: detectedScript === 'traditional' ? 'zh-Hant' : 'zh-Hans', lines }
 }

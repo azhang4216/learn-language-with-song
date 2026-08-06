@@ -9,7 +9,7 @@ declare module 'hanzi' {
   interface HanziApi {
     start(): void
     segment(value: string): string[]
-    definitionLookup(value: string, script?: 's' | 't'): DictionaryEntry[]
+    definitionLookup(value: string, script?: 's' | 't'): DictionaryEntry[] | undefined
   }
 
   const hanzi: HanziApi

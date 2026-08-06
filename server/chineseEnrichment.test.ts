@@ -24,4 +24,22 @@ describe('Chinese lyric enrichment', () => {
     })
     expect(result.lines[0]?.translation).toBeTruthy()
   })
+
+  it('detects traditional lyrics even when the contributor leaves Simplified selected', () => {
+    const result = enrichChineseLyrics('製作：LBI 利比\n打開電視卻找不到遙控', 'simplified')
+    expect(result.sourceLocale).toBe('zh-Hant')
+    expect(result.lines[0]?.tokens.find((token) => token.text === '製作')).toMatchObject({
+      romanization: 'zhì zuò',
+    })
+  })
+
+  it('keeps unknown dictionary tokens editable instead of crashing', () => {
+    const result = enrichChineseLyrics('今天㐀心 LBI 🎵', 'simplified')
+    expect(result.lines).toHaveLength(1)
+    expect(result.lines[0]?.tokens.some((token) => token.gloss === 'Meaning needs review')).toBe(true)
+    expect(result.lines[0]?.tokens).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: 'LBI', gloss: 'Meaning needs review' }),
+      expect.objectContaining({ text: '🎵', gloss: 'punctuation' }),
+    ]))
+  })
 })

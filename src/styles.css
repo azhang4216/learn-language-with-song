@@ -2504,6 +2504,7 @@ input[type="range"]::-moz-range-thumb {
 
 .composer-stepper li {
   position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2529,6 +2530,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .composer-stepper li > span {
+  position: relative;
   z-index: 1;
   display: grid;
   width: 27px;
@@ -2537,6 +2539,16 @@ input[type="range"]::-moz-range-thumb {
   border: 1px solid var(--line-bright);
   border-radius: 50%;
   background: #151817;
+}
+
+.composer-stepper li > strong {
+  position: relative;
+  z-index: 1;
+  padding: 3px 5px;
+  background: #151817;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1;
 }
 
 .composer-stepper li > span svg {
